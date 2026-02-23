@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getValidationMessage } from "@/lib/server/api";
+import { createAuthChallenge } from "@/lib/server/auth-adapter";
 import { checkRateLimit } from "@/lib/server/rate-limit";
 import { getClientKey, parseJsonBody } from "@/lib/server/request";
 import { applyApiNoStoreHeaders, ensureTrustedOrigin } from "@/lib/server/security";
-import { deploySafeSetup } from "@/lib/server/safe-adapter";
-import { safeSetupRequestSchema } from "@/lib/validation";
+import { authChallengeRequestSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,14 +15,11 @@ export async function POST(request: NextRequest) {
   if (untrusted) return applyApiNoStoreHeaders(untrusted);
 
   const clientKey = getClientKey(request);
-  const rateLimit = checkRateLimit(`safe-deploy:${clientKey}`, { max: 8, windowMs: 60_000 });
+  const rateLimit = checkRateLimit(`auth-challenge:${clientKey}`, { max: 20, windowMs: 60_000 });
 
   if (!rateLimit.allowed) {
     return applyApiNoStoreHeaders(
-      NextResponse.json(
-        { error: "Too many deployment attempts. Please wait before trying again." },
-        { status: 429 }
-      )
+      NextResponse.json({ error: "Too many sign in attempts. Try again shortly." }, { status: 429 })
     );
   }
 
@@ -32,10 +29,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const parsed = safeSetupRequestSchema.parse(payload);
-    const deployment = await deploySafeSetup(parsed);
+    const parsed = authChallengeRequestSchema.parse(payload);
+    const challenge = await createAuthChallenge(parsed);
 
-    return applyApiNoStoreHeaders(NextResponse.json(deployment));
+    return applyApiNoStoreHeaders(NextResponse.json(challenge));
   } catch (error) {
     return applyApiNoStoreHeaders(NextResponse.json({ error: getValidationMessage(error) }, { status: 400 }));
   }

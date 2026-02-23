@@ -4,8 +4,8 @@ import { getValidationMessage } from "@/lib/server/api";
 import { checkRateLimit } from "@/lib/server/rate-limit";
 import { getClientKey, parseJsonBody } from "@/lib/server/request";
 import { applyApiNoStoreHeaders, ensureTrustedOrigin } from "@/lib/server/security";
-import { deploySafeSetup } from "@/lib/server/safe-adapter";
-import { safeSetupRequestSchema } from "@/lib/validation";
+import { registerSafeDeployment } from "@/lib/server/safe-adapter";
+import { safeDeploymentRegisterSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,12 +15,12 @@ export async function POST(request: NextRequest) {
   if (untrusted) return applyApiNoStoreHeaders(untrusted);
 
   const clientKey = getClientKey(request);
-  const rateLimit = checkRateLimit(`safe-deploy:${clientKey}`, { max: 8, windowMs: 60_000 });
+  const rateLimit = checkRateLimit(`safe-deploy-register:${clientKey}`, { max: 10, windowMs: 60_000 });
 
   if (!rateLimit.allowed) {
     return applyApiNoStoreHeaders(
       NextResponse.json(
-        { error: "Too many deployment attempts. Please wait before trying again." },
+        { error: "Too many deployment registration attempts. Please wait before trying again." },
         { status: 429 }
       )
     );
@@ -32,9 +32,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const parsed = safeSetupRequestSchema.parse(payload);
-    const deployment = await deploySafeSetup(parsed);
-
+    const parsed = safeDeploymentRegisterSchema.parse(payload);
+    const deployment = await registerSafeDeployment(parsed);
     return applyApiNoStoreHeaders(NextResponse.json(deployment));
   } catch (error) {
     return applyApiNoStoreHeaders(NextResponse.json({ error: getValidationMessage(error) }, { status: 400 }));

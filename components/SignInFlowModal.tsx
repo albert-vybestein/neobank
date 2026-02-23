@@ -1,18 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useCreateWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import {
   ArrowRight,
   CheckCircle2,
   CircleDot,
   Clock3,
   Copy,
-  CreditCard,
   Fingerprint,
+  Globe2,
   Loader2,
   Plus,
-  ShieldCheck,
   Sparkles,
   Trash2,
   Wallet
@@ -29,10 +29,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trackEvent } from "@/lib/analytics";
-import {
-  connectWallet,
-  deploySafeAccount
-} from "@/lib/safe";
+import { getPrivyLoginMethodConfig, type PrivyLoginMethod } from "@/lib/privy";
+import { connectWallet, deploySafeAccount, findSafeByOwner, loginWithSafe } from "@/lib/safe";
 import type { AccountType, SafeModuleConfig } from "@/lib/safe";
 
 type SignInFlowModalProps = {
@@ -40,7 +38,17 @@ type SignInFlowModalProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-type Connector = "passkey" | "walletconnect" | "injected";
+type Journey = "create" | "sign-in";
+type StepKey = "access" | "account" | "features" | "deploy" | "ready";
+
+type ExistingDeployment = {
+  safeAddress: string;
+  deploymentTxHash: string;
+  moduleTxHash: string;
+  mode: "mock" | "real";
+  network: string;
+  createdAt: string;
+};
 
 type SubAccountDraft = {
   id: string;
@@ -48,32 +56,120 @@ type SubAccountDraft = {
   spendingLimit: string;
 };
 
-const connectorOptions: Array<{ id: Connector; label: string; description: string; icon: typeof Fingerprint }> = [
+type ModuleToggleKey = Exclude<keyof SafeModuleConfig, "timeLockHours">;
+
+type FeatureRow = {
+  key: ModuleToggleKey;
+  title: string;
+  description: string;
+  enabledBy: string;
+};
+
+const stepLabels: Record<StepKey, string> = {
+  access: "Access",
+  account: "Account",
+  features: "Features",
+  deploy: "Deploy",
+  ready: "Ready"
+};
+
+const journeySteps: Record<Journey, StepKey[]> = {
+  create: ["access", "account", "features", "deploy", "ready"],
+  "sign-in": ["access", "deploy", "ready"]
+};
+
+const deployChecklist = [
+  "Authenticate",
+  "Prepare secure account key",
+  "Check existing Safe",
+  "Deploy or resume",
+  "Open dashboard session"
+] as const;
+
+const accountTypes: Array<{ id: AccountType; title: string; subtitle: string }> = [
+  { id: "personal", title: "Personal", subtitle: "Everyday spending and savings" },
+  { id: "joint", title: "Joint", subtitle: "Shared account for couples and family" },
+  { id: "business", title: "Business", subtitle: "Team cards, approvals, and controls" },
+  { id: "sub-account", title: "Sub-account", subtitle: "Dedicated budget account" }
+];
+
+const accessMethodCards: Array<{
+  id: PrivyLoginMethod;
+  title: string;
+  description: string;
+  icon: typeof Fingerprint;
+  recommended?: boolean;
+}> = [
   {
     id: "passkey",
-    label: "Passkey",
-    description: "Fast sign in with biometric security",
-    icon: Fingerprint
+    title: "Passkey",
+    description: "Use Face ID or Touch ID. Best default for most people.",
+    icon: Fingerprint,
+    recommended: true
   },
   {
-    id: "walletconnect",
-    label: "WalletConnect",
-    description: "Connect from mobile wallet apps",
+    id: "google",
+    title: "Google",
+    description: "Use Google as your login method.",
+    icon: Globe2
+  },
+  {
+    id: "twitter",
+    title: "X",
+    description: "Use X as your login method.",
+    icon: Sparkles
+  },
+  {
+    id: "wallet",
+    title: "Wallet",
+    description: "Use an existing wallet as your login method.",
     icon: Wallet
-  },
-  {
-    id: "injected",
-    label: "Browser wallet",
-    description: "Use an installed wallet extension",
-    icon: CreditCard
   }
 ];
 
-const accountTypes: Array<{ id: AccountType; title: string; subtitle: string }> = [
-  { id: "personal", title: "Personal", subtitle: "One owner, instant daily use" },
-  { id: "joint", title: "Joint", subtitle: "Two or more owners with approvals" },
-  { id: "business", title: "Business", subtitle: "Team cards, admin roles, policy controls" },
-  { id: "sub-account", title: "Sub-account", subtitle: "Dedicated account for a team, project, or budget" }
+const featureRows: FeatureRow[] = [
+  {
+    key: "guildDelay",
+    title: "Transfer review delay",
+    description: "Pause high value transfers for review before execution.",
+    enabledBy: "Gnosis Guild Delay module"
+  },
+  {
+    key: "guildRoles",
+    title: "Approval roles",
+    description: "Route approvals by role for shared and team accounts.",
+    enabledBy: "Gnosis Guild Roles module"
+  },
+  {
+    key: "guildAllowance",
+    title: "Recurring spending limits",
+    description: "Set recipient and category budgets with monthly resets.",
+    enabledBy: "Gnosis Guild Allowance module"
+  },
+  {
+    key: "guildRecovery",
+    title: "Protected recovery",
+    description: "Use trusted contacts with clear recovery timing.",
+    enabledBy: "Gnosis Guild Recovery module"
+  },
+  {
+    key: "rhinestoneSessions",
+    title: "Trusted sessions",
+    description: "Faster daily approvals bounded by account rules.",
+    enabledBy: "Rhinestone Session Keys"
+  },
+  {
+    key: "rhinestoneSpendingPolicy",
+    title: "Smart spending policies",
+    description: "Recipient, category, and transaction level controls.",
+    enabledBy: "Rhinestone Policy module"
+  },
+  {
+    key: "rhinestoneAutomation",
+    title: "Scheduled automations",
+    description: "Automate recurring top-ups and portfolio sweeps.",
+    enabledBy: "Rhinestone Automation"
+  }
 ];
 
 const initialModules: SafeModuleConfig = {
@@ -87,42 +183,96 @@ const initialModules: SafeModuleConfig = {
   timeLockHours: 24
 };
 
-const stepTitles = ["Connect", "Account setup", "Features", "Deploy", "Ready"] as const;
+const PRIVY_CONFIGURED = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID?.trim());
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shortAddress(address: string) {
+  return `${address.slice(0, 10)}...${address.slice(-6)}`;
+}
+
+function humanizeAccessMethodLabel(method: PrivyLoginMethod) {
+  if (method === "twitter") return "X";
+  if (method === "google") return "Google";
+  if (method === "wallet") return "Wallet";
+  return "Passkey";
+}
+
+function normalizeFlowErrorMessage(error: unknown, selectedAccessMethod: PrivyLoginMethod) {
+  const raw = error instanceof Error ? error.message : "Setup failed. Please try again.";
+  const normalized = raw.toLowerCase();
+  const accessMethodLabel = humanizeAccessMethodLabel(selectedAccessMethod);
+
+  if (normalized.includes("not allowed")) {
+    return `${accessMethodLabel} sign in is not enabled for this Privy app yet. Enable this login method in Privy dashboard and try again.`;
+  }
+
+  if (normalized.includes("popup") && normalized.includes("block")) {
+    return "Your browser blocked the sign in popup. Allow popups for this site and retry.";
+  }
+
+  if (normalized.includes("not completed") || normalized.includes("cancel")) {
+    return "Sign in was not completed. Please retry and approve the request.";
+  }
+
+  if (normalized.includes("not authenticated") || normalized.includes("access token")) {
+    return "Session validation failed. Please authenticate again.";
+  }
+
+  return raw;
+}
 
 function ToggleRow({
   label,
   description,
+  enabledBy,
   enabled,
   onChange
 }: {
   label: string;
   description: string;
+  enabledBy: string;
   enabled: boolean;
   onChange: (value: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-white px-4 py-3">
-      <div>
-        <p className="text-sm font-semibold text-slate-900">{label}</p>
-        <p className="text-xs text-slate-500">{description}</p>
+    <div className="rounded-2xl border border-border/70 bg-white px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">{label}</p>
+          <p className="mt-1 text-xs text-slate-500">{description}</p>
+          <p className="mt-1 text-[11px] text-slate-400">Enabled by {enabledBy}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onChange(!enabled)}
+          className={`inline-flex h-6 w-11 items-center rounded-full p-0.5 transition ${enabled ? "bg-primary" : "bg-slate-300"}`}
+          aria-pressed={enabled}
+          aria-label={`${label} toggle`}
+        >
+          <span className={`h-5 w-5 rounded-full bg-white transition ${enabled ? "translate-x-5" : "translate-x-0"}`} />
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={() => onChange(!enabled)}
-        className={`inline-flex h-6 w-11 items-center rounded-full p-0.5 transition ${enabled ? "bg-primary" : "bg-slate-300"}`}
-        aria-pressed={enabled}
-      >
-        <span className={`h-5 w-5 rounded-full bg-white transition ${enabled ? "translate-x-5" : "translate-x-0"}`} />
-      </button>
     </div>
   );
 }
 
 export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
-  const [step, setStep] = useState(0);
-  const [connector, setConnector] = useState<Connector>("passkey");
-  const [connecting, setConnecting] = useState(false);
-  const [walletAddress, setWalletAddress] = useState<string>("");
+  const { ready: privyReady, authenticated: privyAuthenticated, login, logout, getAccessToken } = usePrivy();
+  const { wallets, ready: walletsReady } = useWallets();
+  const { createWallet } = useCreateWallet();
+
+  const walletsRef = useRef(wallets);
+  const walletsReadyRef = useRef(walletsReady);
+  const privyAuthenticatedRef = useRef(privyAuthenticated);
+  const privyReadyRef = useRef(privyReady);
+
+  const [journey, setJourney] = useState<Journey>("create");
+  const [stepIndex, setStepIndex] = useState(0);
+
+  const [selectedAccessMethod, setSelectedAccessMethod] = useState<PrivyLoginMethod>("passkey");
 
   const [accountType, setAccountType] = useState<AccountType>("personal");
   const [accountName, setAccountName] = useState("Main account");
@@ -131,81 +281,327 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
   const [subAccountName, setSubAccountName] = useState("");
   const [subAccountLimit, setSubAccountLimit] = useState("");
   const [subAccounts, setSubAccounts] = useState<SubAccountDraft[]>([
-    { id: "1", name: "Bills", spendingLimit: "2500" },
-    { id: "2", name: "Travel", spendingLimit: "1200" }
+    { id: "bills", name: "Bills", spendingLimit: "2500" },
+    { id: "travel", name: "Travel", spendingLimit: "1200" }
   ]);
 
   const [modules, setModules] = useState<SafeModuleConfig>(initialModules);
+  const [preferExistingSafe, setPreferExistingSafe] = useState(true);
 
   const [deploying, setDeploying] = useState(false);
+  const [deployPhaseIndex, setDeployPhaseIndex] = useState(0);
+
+  const [walletAddress, setWalletAddress] = useState("");
+  const [existingDeployment, setExistingDeployment] = useState<ExistingDeployment | null>(null);
+
   const [safeAddress, setSafeAddress] = useState("");
   const [deploymentTx, setDeploymentTx] = useState("");
   const [moduleTx, setModuleTx] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [deploymentMode, setDeploymentMode] = useState<"mock" | "real">("mock");
+  const [deploymentNetwork, setDeploymentNetwork] = useState("sepolia");
+
+  const [sessionReady, setSessionReady] = useState(false);
   const [flowError, setFlowError] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const privyConfig = getPrivyLoginMethodConfig();
+  const visibleAccessMethods = useMemo(() => {
+    if (!privyConfig.hasExplicitConfiguration) return accessMethodCards;
+    const filtered = accessMethodCards.filter((entry) => privyConfig.methods.includes(entry.id));
+    return filtered.length > 0 ? filtered : accessMethodCards;
+  }, [privyConfig.hasExplicitConfiguration, privyConfig.methods]);
+
+  const steps = journeySteps[journey];
+  const currentStep = steps[Math.min(stepIndex, steps.length - 1)] ?? "access";
+
+  const canContinue = useMemo(() => {
+    if (currentStep === "account") return accountName.trim().length > 0;
+    return true;
+  }, [accountName, currentStep]);
+
+  const enabledFeatureCount = useMemo(
+    () => featureRows.reduce((count, row) => (modules[row.key] ? count + 1 : count), 0),
+    [modules]
+  );
+
+  useEffect(() => {
+    walletsRef.current = wallets;
+  }, [wallets]);
+
+  useEffect(() => {
+    walletsReadyRef.current = walletsReady;
+  }, [walletsReady]);
+
+  useEffect(() => {
+    privyAuthenticatedRef.current = privyAuthenticated;
+  }, [privyAuthenticated]);
+
+  useEffect(() => {
+    privyReadyRef.current = privyReady;
+  }, [privyReady]);
+
+  useEffect(() => {
+    if (stepIndex > steps.length - 1) {
+      setStepIndex(steps.length - 1);
+    }
+  }, [stepIndex, steps.length]);
 
   const resetFlow = () => {
-    setStep(0);
-    setConnecting(false);
-    setWalletAddress("");
+    setJourney("create");
+    setStepIndex(0);
+    setSelectedAccessMethod("passkey");
+
     setAccountType("personal");
     setAccountName("Main account");
     setBaseCurrency("EUR");
     setSubAccountName("");
     setSubAccountLimit("");
     setSubAccounts([
-      { id: "1", name: "Bills", spendingLimit: "2500" },
-      { id: "2", name: "Travel", spendingLimit: "1200" }
+      { id: "bills", name: "Bills", spendingLimit: "2500" },
+      { id: "travel", name: "Travel", spendingLimit: "1200" }
     ]);
     setModules(initialModules);
+    setPreferExistingSafe(true);
+
     setDeploying(false);
+    setDeployPhaseIndex(0);
+
+    setWalletAddress("");
+    setExistingDeployment(null);
     setSafeAddress("");
     setDeploymentTx("");
     setModuleTx("");
-    setCopied(false);
+    setDeploymentMode("mock");
+    setDeploymentNetwork("sepolia");
+    setSessionReady(false);
     setFlowError("");
+    setCopied(false);
   };
 
   useEffect(() => {
     if (!open) {
-      const resetTimer = setTimeout(() => {
-        resetFlow();
-      }, 150);
-      return () => clearTimeout(resetTimer);
+      const timer = setTimeout(resetFlow, 150);
+      return () => clearTimeout(timer);
     }
   }, [open]);
 
-  const canContinue = useMemo(() => {
-    if (step === 0) return Boolean(walletAddress);
-    if (step === 1) return Boolean(accountName.trim());
-    if (step === 2) return true;
-    if (step === 3) return Boolean(safeAddress);
-    return true;
-  }, [step, walletAddress, accountName, safeAddress]);
+  const waitForPrivyReady = async () => {
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      if (privyReadyRef.current) return;
+      await delay(250);
+    }
+    throw new Error("Sign in is still loading. Please try again.");
+  };
 
-  const handleConnect = async () => {
-    setFlowError("");
-    setConnecting(true);
+  const waitForPrivyAuthenticated = async () => {
+    for (let attempt = 0; attempt < 480; attempt += 1) {
+      if (privyAuthenticatedRef.current) return;
+      await delay(250);
+    }
+    throw new Error("Sign in was not completed. Please try again.");
+  };
+
+  const waitForWalletProvider = async (address?: string) => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if (!walletsReadyRef.current) {
+        await delay(250);
+        continue;
+      }
+
+      const candidates = walletsRef.current.filter(
+        (wallet) => wallet.address && wallet.address.toLowerCase().startsWith("0x")
+      );
+
+      const match = address
+        ? candidates.find((wallet) => wallet.address.toLowerCase() === address.toLowerCase())
+        : candidates[0];
+
+      if (match && typeof match.getEthereumProvider === "function") {
+        return match;
+      }
+
+      await delay(250);
+    }
+
+    return null;
+  };
+
+  const ensurePrivyAuthentication = async () => {
+    if (!PRIVY_CONFIGURED) return;
+
+    await waitForPrivyReady();
+
+    if (privyAuthenticatedRef.current) return;
+
+    if (privyConfig.hasExplicitConfiguration && !privyConfig.methods.includes(selectedAccessMethod)) {
+      throw new Error("The selected access method is not enabled for this Privy app.");
+    }
 
     try {
-      const result = await connectWallet(connector);
-      setWalletAddress(result.walletAddress);
-      void trackEvent("safe_connect_success", { connector });
+      login({ loginMethods: [selectedAccessMethod] });
+    } catch {
+      login();
+    }
+
+    await waitForPrivyAuthenticated();
+  };
+
+  const resolveOwnerForSession = async () => {
+    if (!PRIVY_CONFIGURED) {
+      if (!walletAddress) {
+        const connected = await connectWallet("injected");
+        setWalletAddress(connected.walletAddress);
+        return { ownerAddress: connected.walletAddress, ownerProvider: undefined };
+      }
+      return { ownerAddress: walletAddress, ownerProvider: undefined };
+    }
+
+    await ensurePrivyAuthentication();
+
+    const existingWallet = await waitForWalletProvider();
+    if (existingWallet) {
+      const provider = await existingWallet.getEthereumProvider();
+      setWalletAddress(existingWallet.address);
+      return { ownerAddress: existingWallet.address, ownerProvider: provider };
+    }
+
+    const created = await createWallet();
+    if (!created?.address) {
+      throw new Error("Could not create your secure account key.");
+    }
+
+    const hydratedWallet = await waitForWalletProvider(created.address);
+    if (!hydratedWallet) {
+      throw new Error("Account key was created but could not be initialized. Please retry.");
+    }
+
+    const provider = await hydratedWallet.getEthereumProvider();
+    setWalletAddress(hydratedWallet.address);
+    void trackEvent("privy_embedded_wallet_created", { source: "deploy" });
+
+    return { ownerAddress: hydratedWallet.address, ownerProvider: provider };
+  };
+
+  const startSafeSession = async (targetSafeAddress: string, ownerAddress: string) => {
+    const privyAccessToken = PRIVY_CONFIGURED ? await getAccessToken() : undefined;
+    if (PRIVY_CONFIGURED && !privyAccessToken) {
+      throw new Error("Authenticated session expired. Please retry.");
+    }
+
+    await loginWithSafe({
+      walletAddress: ownerAddress,
+      safeAddress: targetSafeAddress,
+      privyAccessToken: privyAccessToken ?? undefined
+    });
+
+    setSessionReady(true);
+  };
+
+  const runDeployOrSignIn = async () => {
+    setFlowError("");
+    setDeploying(true);
+
+    try {
+      setDeployPhaseIndex(1);
+      await delay(100);
+
+      setDeployPhaseIndex(2);
+      const { ownerAddress, ownerProvider } = await resolveOwnerForSession();
+
+      setDeployPhaseIndex(3);
+      const existing = await findSafeByOwner(ownerAddress);
+      setExistingDeployment(existing);
+
+      if (journey === "sign-in") {
+        if (!existing) {
+          throw new Error("No existing account was found for this login method. Choose Create account to continue.");
+        }
+
+        setSafeAddress(existing.safeAddress);
+        setDeploymentTx(existing.deploymentTxHash);
+        setModuleTx(existing.moduleTxHash);
+        setDeploymentMode(existing.mode);
+        setDeploymentNetwork(existing.network);
+
+        setDeployPhaseIndex(5);
+        await startSafeSession(existing.safeAddress, ownerAddress);
+        setStepIndex(steps.length - 1);
+
+        void trackEvent("safe_login_existing_success", {
+          authMethod: selectedAccessMethod,
+          safeAddress: existing.safeAddress
+        });
+
+        return;
+      }
+
+      if (existing && preferExistingSafe) {
+        setSafeAddress(existing.safeAddress);
+        setDeploymentTx(existing.deploymentTxHash);
+        setModuleTx(existing.moduleTxHash);
+        setDeploymentMode(existing.mode);
+        setDeploymentNetwork(existing.network);
+
+        setDeployPhaseIndex(5);
+        await startSafeSession(existing.safeAddress, ownerAddress);
+        setStepIndex(steps.length - 1);
+
+        void trackEvent("safe_login_existing_success", {
+          authMethod: selectedAccessMethod,
+          safeAddress: existing.safeAddress
+        });
+
+        return;
+      }
+
+      setDeployPhaseIndex(4);
+      const deployed = await deploySafeAccount(
+        {
+          walletAddress: ownerAddress,
+          accountType,
+          baseCurrency,
+          accountName,
+          subAccounts: subAccounts.map((item) => ({ name: item.name, spendingLimit: item.spendingLimit })),
+          modules
+        },
+        { ownerProvider }
+      );
+
+      setSafeAddress(deployed.safeAddress);
+      setDeploymentTx(deployed.deploymentTxHash);
+      setModuleTx(deployed.moduleTxHash);
+      setDeploymentMode(deployed.mode ?? "mock");
+      setDeploymentNetwork(deployed.network ?? "sepolia");
+
+      setDeployPhaseIndex(5);
+      await startSafeSession(deployed.safeAddress, ownerAddress);
+      setStepIndex(steps.length - 1);
+
+      void trackEvent("safe_deploy_success", {
+        accountType,
+        features: enabledFeatureCount,
+        authMethod: selectedAccessMethod,
+        mode: deployed.mode ?? "mock"
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Connection failed. Please try again.";
+      const message = normalizeFlowErrorMessage(error, selectedAccessMethod);
       setFlowError(message);
-      void trackEvent("safe_connect_failed", { connector, message });
+      setSessionReady(false);
+      void trackEvent("safe_deploy_failed", { message, journey });
     } finally {
-      setConnecting(false);
+      setDeploying(false);
+      setDeployPhaseIndex(0);
     }
   };
 
   const addSubAccount = () => {
     if (!subAccountName.trim() || !subAccountLimit.trim()) return;
+
     const generatedId =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
     setSubAccounts((prev) => [
       ...prev,
       {
@@ -214,142 +610,221 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
         spendingLimit: subAccountLimit.trim()
       }
     ]);
+
     setSubAccountName("");
     setSubAccountLimit("");
   };
 
-  const handleDeploy = async () => {
-    setFlowError("");
-    setDeploying(true);
-
-    try {
-      const result = await deploySafeAccount({
-        walletAddress,
-        accountType,
-        baseCurrency,
-        accountName,
-        subAccounts: subAccounts.map((item) => ({ name: item.name, spendingLimit: item.spendingLimit })),
-        modules
-      });
-      setSafeAddress(result.safeAddress);
-      setDeploymentTx(result.deploymentTxHash);
-      setModuleTx(result.moduleTxHash);
-      setStep(4);
-      void trackEvent("safe_deploy_success", { accountType, subAccounts: subAccounts.length });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Deployment failed. Please try again.";
-      setFlowError(message);
-      void trackEvent("safe_deploy_failed", { message });
-    } finally {
-      setDeploying(false);
-    }
-  };
-
   const copySafeAddress = async () => {
+    if (!safeAddress) return;
+
     try {
       await navigator.clipboard.writeText(safeAddress);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
+      setTimeout(() => setCopied(false), 1500);
     } catch {
       setCopied(false);
     }
   };
 
-  const goNext = () => {
+  const goBack = () => {
+    if (deploying) return;
     setFlowError("");
-    if (step === 2) {
-      setStep(3);
-      return;
-    }
-    if (step < 3 && canContinue) {
-      setStep((prev) => prev + 1);
-    }
+    setStepIndex((index) => Math.max(index - 1, 0));
   };
 
-  const goBack = () => {
+  const goNext = () => {
+    if (deploying || !canContinue) return;
     setFlowError("");
-    if (step > 0 && step < 4) {
-      setStep((prev) => prev - 1);
+
+    if (currentStep === "deploy") {
+      void runDeployOrSignIn();
+      return;
     }
+
+    setStepIndex((index) => Math.min(index + 1, steps.length - 1));
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-4xl overflow-hidden p-0">
-        <div className="grid h-[88vh] max-h-[88vh] grid-rows-[auto_minmax(0,1fr)] overflow-hidden md:grid-cols-[240px_minmax(0,1fr)] md:grid-rows-1">
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (deploying && !nextOpen) return;
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent className="max-h-[96dvh] w-[min(96vw,1120px)] max-w-none overflow-hidden p-0">
+        <div className="flex h-[min(92dvh,860px)] flex-col overflow-hidden md:grid md:grid-cols-[280px_minmax(0,1fr)]">
           <aside className="border-b border-border/80 bg-slate-50 p-6 md:border-b-0 md:border-r">
-            <div className="space-y-3">
+            <div className="space-y-2">
               <Badge variant="outline" className="bg-white text-slate-700">
-                Sign in flow
+                {journey === "create" ? "Create account" : "Sign in"}
               </Badge>
-              <p className="text-sm text-slate-600">Deploy your Safe smart account with neobank controls.</p>
+              <p className="text-sm text-slate-600">
+                Select access first. Authentication only happens at deploy or sign in stage.
+              </p>
             </div>
-            <ol className="mt-6 space-y-3">
-              {stepTitles.map((title, index) => (
-                <li
-                  key={title}
-                  className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${
-                    step === index ? "bg-white font-semibold text-slate-900 shadow-sm" : "text-slate-500"
-                  }`}
-                >
-                  {step > index ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <CircleDot className="h-4 w-4" />}
-                  <span>{title}</span>
-                </li>
-              ))}
+
+            <ol className="mt-6 space-y-2">
+              {steps.map((step, index) => {
+                const active = index === stepIndex;
+                const done = index < stepIndex;
+                return (
+                  <li
+                    key={`${step}-${index}`}
+                    className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${
+                      active ? "bg-white font-semibold text-slate-900 shadow-sm" : "text-slate-500"
+                    }`}
+                  >
+                    {done ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    ) : (
+                      <CircleDot className="h-4 w-4" />
+                    )}
+                    <span>{stepLabels[step]}</span>
+                  </li>
+                );
+              })}
             </ol>
           </aside>
 
-          <div className="min-h-0 overflow-y-auto overscroll-contain p-6 md:p-8">
-            {step === 0 ? (
+          <div className="min-h-0 overflow-y-auto overscroll-contain p-6 pb-20 md:p-8 md:pb-8">
+            {currentStep === "access" ? (
               <div className="space-y-6">
                 <DialogHeader>
-                  <DialogTitle className="text-3xl">Connect to begin</DialogTitle>
+                  <DialogTitle className="text-3xl">Choose access method</DialogTitle>
                   <DialogDescription className="text-base">
-                    Connect your preferred signer. We use this to deploy and control your Safe smart account.
+                    Pick your login method now. We connect it at the final step.
                   </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {connectorOptions.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setConnector(option.id)}
-                      className={`rounded-2xl border p-4 text-left transition ${
-                        connector === option.id ? "border-primary bg-blue-50" : "border-border/80 bg-white hover:bg-slate-50"
-                      }`}
-                    >
-                      <option.icon className="mb-3 h-5 w-5 text-primary" />
-                      <p className="text-sm font-semibold text-slate-900">{option.label}</p>
-                      <p className="mt-1 text-xs text-slate-500">{option.description}</p>
-                    </button>
-                  ))}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJourney("create");
+                      setStepIndex(0);
+                    }}
+                    className={`rounded-2xl border p-4 text-left transition ${
+                      journey === "create" ? "border-primary bg-blue-50" : "border-border/80 bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <p className="text-sm font-semibold text-slate-900">Create account</p>
+                    <p className="mt-1 text-xs text-slate-500">New Safe account with your selected account features.</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJourney("sign-in");
+                      setStepIndex(0);
+                    }}
+                    className={`rounded-2xl border p-4 text-left transition ${
+                      journey === "sign-in" ? "border-primary bg-blue-50" : "border-border/80 bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <p className="text-sm font-semibold text-slate-900">Sign in existing</p>
+                    <p className="mt-1 text-xs text-slate-500">Find and open your existing Safe-backed account.</p>
+                  </button>
                 </div>
 
-                <Card className="bg-white/95">
-                  <CardContent className="p-5">
-                    {!walletAddress ? (
-                      <Button onClick={handleConnect} disabled={connecting}>
-                        {connecting ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Connecting
-                          </>
-                        ) : (
-                          <>
-                            <Wallet className="h-4 w-4" />
-                            Connect {connectorOptions.find((item) => item.id === connector)?.label}
-                          </>
-                        )}
-                      </Button>
-                    ) : (
-                      <div className="space-y-2">
-                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700">
-                          Connected
-                        </Badge>
-                        <p className="font-mono text-xs text-slate-700">{walletAddress}</p>
+                {PRIVY_CONFIGURED ? (
+                  <Card className="bg-white/95">
+                    <CardContent className="space-y-4 p-5">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Primary method</p>
+                        {visibleAccessMethods
+                          .filter((entry) => entry.id === "passkey")
+                          .map((method) => (
+                            <button
+                              key={method.id}
+                              type="button"
+                              onClick={() => setSelectedAccessMethod(method.id)}
+                              className={`mt-2 w-full rounded-2xl border p-4 text-left transition ${
+                                selectedAccessMethod === method.id
+                                  ? "border-primary bg-blue-50"
+                                  : "border-blue-200 bg-blue-50/60 hover:bg-blue-100/60"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-base font-semibold text-slate-900">{method.title}</p>
+                                  <p className="mt-1 text-sm text-slate-600">{method.description}</p>
+                                </div>
+                                <Badge className="bg-white text-slate-700">Recommended</Badge>
+                              </div>
+                            </button>
+                          ))}
                       </div>
-                    )}
+
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Secondary methods</p>
+                        <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                          {visibleAccessMethods
+                            .filter((entry) => entry.id !== "passkey")
+                            .map((method) => (
+                              <button
+                                key={method.id}
+                                type="button"
+                                onClick={() => setSelectedAccessMethod(method.id)}
+                                className={`rounded-2xl border p-4 text-left transition ${
+                                  selectedAccessMethod === method.id
+                                    ? "border-primary bg-blue-50"
+                                    : "border-border/80 bg-white hover:bg-slate-50"
+                                }`}
+                              >
+                                <method.icon className="mb-2 h-4 w-4 text-primary" />
+                                <p className="text-sm font-semibold text-slate-900">{method.title}</p>
+                                <p className="mt-1 text-xs text-slate-500">{method.description}</p>
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card className="bg-white/95">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Local test mode</CardTitle>
+                      <p className="text-sm text-slate-600">
+                        Privy is not configured. You can test with a local browser wallet flow.
+                      </p>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {!walletAddress ? (
+                        <Button
+                          type="button"
+                          onClick={async () => {
+                            setFlowError("");
+                            try {
+                              const connected = await connectWallet("injected");
+                              setWalletAddress(connected.walletAddress);
+                            } catch (error) {
+                              setFlowError(error instanceof Error ? error.message : "Could not connect wallet.");
+                            }
+                          }}
+                        >
+                          <Wallet className="h-4 w-4" />
+                          Connect browser wallet
+                        </Button>
+                      ) : (
+                        <div className="space-y-1">
+                          <Badge variant="outline" className="bg-emerald-50 text-emerald-700">
+                            Connected
+                          </Badge>
+                          <p className="font-mono text-xs text-slate-700">{walletAddress}</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                <Card className="bg-white/95">
+                  <CardContent className="space-y-2 p-5 text-sm text-slate-600">
+                    <p className="font-semibold text-slate-900">What happens at deploy</p>
+                    <p>1. You authenticate with the method selected above.</p>
+                    <p>2. We prepare your secure account key if needed.</p>
+                    <p>3. We open your existing Safe account or deploy a new one.</p>
+                    <p>4. Your dashboard session starts automatically.</p>
                   </CardContent>
                 </Card>
 
@@ -357,12 +832,12 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
               </div>
             ) : null}
 
-            {step === 1 ? (
+            {currentStep === "account" ? (
               <div className="space-y-6">
                 <DialogHeader>
-                  <DialogTitle className="text-3xl">Account setup</DialogTitle>
+                  <DialogTitle className="text-3xl">Set up account</DialogTitle>
                   <DialogDescription className="text-base">
-                    Choose how your account should operate from day one.
+                    Configure your account profile before deployment.
                   </DialogDescription>
                 </DialogHeader>
 
@@ -373,7 +848,9 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
                       type="button"
                       onClick={() => setAccountType(type.id)}
                       className={`rounded-2xl border p-4 text-left transition ${
-                        accountType === type.id ? "border-primary bg-blue-50" : "border-border/80 bg-white hover:bg-slate-50"
+                        accountType === type.id
+                          ? "border-primary bg-blue-50"
+                          : "border-border/80 bg-white hover:bg-slate-50"
                       }`}
                     >
                       <p className="text-sm font-semibold text-slate-900">{type.title}</p>
@@ -395,6 +872,7 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
                       placeholder="Main account"
                     />
                   </div>
+
                   <div className="space-y-2">
                     <label htmlFor="currency" className="text-sm font-medium text-slate-700">
                       Base currency
@@ -415,10 +893,10 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
                 <Card className="bg-white/95">
                   <CardHeader>
                     <CardTitle className="text-xl">Sub-accounts</CardTitle>
-                    <p className="text-sm text-slate-600">Create dedicated buckets with their own spending limits.</p>
+                    <p className="text-sm text-slate-600">Create dedicated buckets with their own limits.</p>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="grid gap-3 sm:grid-cols-[1fr_140px_auto]">
+                    <div className="grid gap-3 sm:grid-cols-[1fr_130px_auto]">
                       <input
                         value={subAccountName}
                         onChange={(event) => setSubAccountName(event.target.value)}
@@ -436,12 +914,18 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
                         Add
                       </Button>
                     </div>
+
                     <div className="space-y-2">
                       {subAccounts.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between rounded-xl border border-border/70 bg-slate-50 px-3 py-2">
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between rounded-xl border border-border/70 bg-slate-50 px-3 py-2"
+                        >
                           <div>
                             <p className="text-sm font-medium text-slate-800">{item.name}</p>
-                            <p className="text-xs text-slate-500">Limit {baseCurrency} {item.spendingLimit}</p>
+                            <p className="text-xs text-slate-500">
+                              Limit {baseCurrency} {item.spendingLimit}
+                            </p>
                           </div>
                           <Button
                             type="button"
@@ -459,104 +943,51 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
               </div>
             ) : null}
 
-            {step === 2 ? (
+            {currentStep === "features" ? (
               <div className="space-y-6">
                 <DialogHeader>
                   <DialogTitle className="text-3xl">Account features</DialogTitle>
                   <DialogDescription className="text-base">
-                    Turn on the features you want in your account. We handle the technical setup behind the scenes.
+                    Choose the controls you want active from day one.
                   </DialogDescription>
                 </DialogHeader>
 
                 <Card className="bg-white/95">
                   <CardHeader>
-                    <CardTitle className="text-lg">How features are enabled</CardTitle>
+                    <CardTitle className="text-lg">How this is enabled</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3 text-sm text-slate-600">
+                  <CardContent className="space-y-2 text-sm text-slate-600">
                     <p>
-                      Every feature below maps to audited modules. We install and configure them automatically during deployment.
+                      You only choose product features here. During deployment we map these features to audited account
+                      modules from Safe ecosystem partners.
                     </p>
-                    <ul className="space-y-1">
-                      <li>
-                        <span className="font-semibold text-slate-800">Gnosis Guild:</span> delay, roles, allowance, recovery
-                      </li>
-                      <li>
-                        <span className="font-semibold text-slate-800">Rhinestone:</span> session access, spending policies, automations
-                      </li>
-                    </ul>
+                    <p>Gnosis Guild and Rhinestone modules are configured in background, not as user-facing complexity.</p>
                   </CardContent>
                 </Card>
 
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <Card className="bg-white/95">
-                    <CardHeader>
-                      <CardTitle className="text-lg">Safety and control features</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <ToggleRow
-                        label="Approval delay for sensitive changes"
-                        description="Adds a protected waiting period for owner and policy updates"
-                        enabled={modules.guildDelay}
-                        onChange={(value) => setModules((prev) => ({ ...prev, guildDelay: value }))}
-                      />
-                      <ToggleRow
-                        label="Team roles and approval routing"
-                        description="Define who can initiate, approve, and execute different actions"
-                        enabled={modules.guildRoles}
-                        onChange={(value) => setModules((prev) => ({ ...prev, guildRoles: value }))}
-                      />
-                      <ToggleRow
-                        label="Recurring budgets and spending caps"
-                        description="Set monthly limits for cards, recipients, or shared budgets"
-                        enabled={modules.guildAllowance}
-                        onChange={(value) => setModules((prev) => ({ ...prev, guildAllowance: value }))}
-                      />
-                      <ToggleRow
-                        label="Trusted recovery contacts"
-                        description="Restore access with guardians and a clear recovery timeline"
-                        enabled={modules.guildRecovery}
-                        onChange={(value) => setModules((prev) => ({ ...prev, guildRecovery: value }))}
-                      />
-                    </CardContent>
-                  </Card>
-
-                  <Card className="bg-white/95">
-                    <CardHeader>
-                      <CardTitle className="text-lg">Speed and automation features</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <ToggleRow
-                        label="Fast trusted sessions"
-                        description="Approve frequent actions faster without removing account limits"
-                        enabled={modules.rhinestoneSessions}
-                        onChange={(value) => setModules((prev) => ({ ...prev, rhinestoneSessions: value }))}
-                      />
-                      <ToggleRow
-                        label="Smart spending rules"
-                        description="Control recipients, categories, and transfer sizes in real time"
-                        enabled={modules.rhinestoneSpendingPolicy}
-                        onChange={(value) => setModules((prev) => ({ ...prev, rhinestoneSpendingPolicy: value }))}
-                      />
-                      <ToggleRow
-                        label="Scheduled money automations"
-                        description="Automate recurring actions like top-ups, sweeps, and guardrail checks"
-                        enabled={modules.rhinestoneAutomation}
-                        onChange={(value) => setModules((prev) => ({ ...prev, rhinestoneAutomation: value }))}
-                      />
-                    </CardContent>
-                  </Card>
+                  {featureRows.map((row) => (
+                    <ToggleRow
+                      key={row.key}
+                      label={row.title}
+                      description={row.description}
+                      enabledBy={row.enabledBy}
+                      enabled={modules[row.key]}
+                      onChange={(value) => setModules((prev) => ({ ...prev, [row.key]: value }))}
+                    />
+                  ))}
                 </div>
 
                 <Card className="bg-white/95">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-lg">
                       <Clock3 className="h-4 w-4 text-primary" />
-                      Transfer hold window
+                      Transfer review window
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <p className="text-sm text-slate-600">
-                      Add a delay to high-value transfers so you have time to review and cancel if needed.
+                      For high value transfers, add a delay so you can review and cancel if needed.
                     </p>
                     <input
                       type="range"
@@ -565,10 +996,7 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
                       step={1}
                       value={modules.timeLockHours}
                       onChange={(event) =>
-                        setModules((prev) => ({
-                          ...prev,
-                          timeLockHours: Number(event.target.value)
-                        }))
+                        setModules((prev) => ({ ...prev, timeLockHours: Number(event.target.value) }))
                       }
                       className="w-full"
                     />
@@ -582,84 +1010,174 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
               </div>
             ) : null}
 
-            {step === 3 ? (
+            {currentStep === "deploy" ? (
               <div className="space-y-6">
                 <DialogHeader>
-                  <DialogTitle className="text-3xl">Review and deploy</DialogTitle>
+                  <DialogTitle className="text-3xl">{journey === "create" ? "Deploy account" : "Sign in"}</DialogTitle>
                   <DialogDescription className="text-base">
-                    This deploys your account and enables the features selected in setup.
+                    Authenticate now, then we finish setup and open your dashboard session.
                   </DialogDescription>
                 </DialogHeader>
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <Card className="bg-white/95">
                     <CardHeader>
-                      <CardTitle className="text-lg">Account summary</CardTitle>
+                      <CardTitle className="text-lg">Summary</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm text-slate-700">
-                      <p><span className="font-semibold">Connected signer:</span> {walletAddress.slice(0, 10)}...{walletAddress.slice(-6)}</p>
-                      <p><span className="font-semibold">Account type:</span> {accountType}</p>
-                      <p><span className="font-semibold">Account name:</span> {accountName}</p>
-                      <p><span className="font-semibold">Base currency:</span> {baseCurrency}</p>
-                      <p><span className="font-semibold">Sub-accounts:</span> {subAccounts.length}</p>
+                      <p>
+                        <span className="font-semibold">Journey:</span>{" "}
+                        {journey === "create" ? "Create account" : "Sign in existing"}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Access method:</span>{" "}
+                        {selectedAccessMethod === "twitter" ? "X" : selectedAccessMethod}
+                      </p>
+                      {journey === "create" ? (
+                        <>
+                          <p>
+                            <span className="font-semibold">Account type:</span> {accountType}
+                          </p>
+                          <p>
+                            <span className="font-semibold">Account name:</span> {accountName}
+                          </p>
+                          <p>
+                            <span className="font-semibold">Base currency:</span> {baseCurrency}
+                          </p>
+                          <p>
+                            <span className="font-semibold">Sub-accounts:</span> {subAccounts.length}
+                          </p>
+                          <p>
+                            <span className="font-semibold">Features enabled:</span> {enabledFeatureCount}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-slate-600">We will find the latest account linked to this owner and open it.</p>
+                      )}
                     </CardContent>
                   </Card>
 
                   <Card className="bg-white/95">
                     <CardHeader>
-                      <CardTitle className="text-lg">Feature summary</CardTitle>
+                      <CardTitle className="text-lg">Sign in and deployment behavior</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-2 text-sm text-slate-700">
-                      <p className="flex items-center gap-2">
-                        <ShieldCheck className="h-4 w-4 text-primary" />
-                        Safety features: {modules.guildDelay || modules.guildRoles || modules.guildAllowance || modules.guildRecovery ? "Enabled" : "Off"}
-                      </p>
-                      <p className="flex items-center gap-2">
-                        <Sparkles className="h-4 w-4 text-primary" />
-                        Speed features: {modules.rhinestoneSessions || modules.rhinestoneSpendingPolicy || modules.rhinestoneAutomation ? "Enabled" : "Off"}
-                      </p>
-                      <p className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-primary" />Transfer hold: {modules.timeLockHours} hours</p>
+                    <CardContent className="space-y-3 text-sm text-slate-700">
+                      {journey === "create" ? (
+                        <label className="flex cursor-pointer items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={preferExistingSafe}
+                            onChange={(event) => setPreferExistingSafe(event.target.checked)}
+                            className="mt-1 h-4 w-4 rounded border-slate-300"
+                          />
+                          <span>If an existing account is found, sign in directly instead of deploying a new one.</span>
+                        </label>
+                      ) : (
+                        <p>Only existing accounts are opened in this mode. No new account is deployed.</p>
+                      )}
+
                       <p className="text-xs text-slate-500">
-                        Under the hood providers: Gnosis Guild + Rhinestone
+                        Transaction and signature handling is automatic. There are no manual signature steps in this flow.
                       </p>
                     </CardContent>
                   </Card>
                 </div>
 
-                <Button onClick={handleDeploy} disabled={deploying}>
+                <Card className="bg-white/95">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Progress</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {deployChecklist.map((label, index) => {
+                      const itemIndex = index + 1;
+                      const done = deployPhaseIndex > itemIndex;
+                      const active = deployPhaseIndex === itemIndex;
+
+                      return (
+                        <div key={label} className="flex items-center gap-2 text-sm">
+                          {done ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                          ) : active ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          ) : (
+                            <CircleDot className="h-4 w-4 text-slate-300" />
+                          )}
+                          <span className={active ? "font-medium text-slate-900" : "text-slate-600"}>{label}</span>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+
+                {existingDeployment ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4">
+                    <p className="text-sm font-semibold text-emerald-900">Existing account detected</p>
+                    <p className="mt-1 font-mono text-xs text-emerald-800">{existingDeployment.safeAddress}</p>
+                  </div>
+                ) : null}
+
+                {journey === "sign-in" && flowError.toLowerCase().includes("no existing account") ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setJourney("create");
+                      setStepIndex(1);
+                      setFlowError("");
+                    }}
+                  >
+                    Switch to Create account
+                  </Button>
+                ) : null}
+
+                <Button type="button" onClick={() => void runDeployOrSignIn()} disabled={deploying}>
                   {deploying ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Deploying smart account
+                      Working...
                     </>
                   ) : (
                     <>
-                      Deploy account
+                      {journey === "create" ? "Authenticate and deploy" : "Authenticate and sign in"}
                       <ArrowRight className="h-4 w-4" />
                     </>
                   )}
                 </Button>
 
+                {PRIVY_CONFIGURED ? (
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    onClick={async () => {
+                      await logout();
+                      setFlowError("");
+                    }}
+                    disabled={deploying}
+                  >
+                    Reset sign in session
+                  </Button>
+                ) : null}
+
                 {flowError ? <p className="text-sm text-rose-600">{flowError}</p> : null}
               </div>
             ) : null}
 
-            {step === 4 ? (
+            {currentStep === "ready" ? (
               <div className="space-y-6">
                 <DialogHeader>
-                  <DialogTitle className="text-3xl">Account deployed</DialogTitle>
+                  <DialogTitle className="text-3xl">Account ready</DialogTitle>
                   <DialogDescription className="text-base">
-                    Your account is live with your selected safety, speed, and automation features.
+                    Session is active. Your dashboard is ready.
                   </DialogDescription>
                 </DialogHeader>
 
                 <Card className="bg-white/95">
                   <CardContent className="space-y-3 p-5">
                     <Badge variant="outline" className="bg-emerald-50 text-emerald-700">
-                      Deployment complete
+                      {deploymentMode === "real" ? "Live testnet deployment" : "Mock deployment mode"}
                     </Badge>
                     <div className="space-y-2 text-sm">
-                      <p className="font-medium text-slate-900">Safe account</p>
+                      <p className="font-medium text-slate-900">Account address</p>
                       <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700">
                         <span>{safeAddress}</span>
                         <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={copySafeAddress}>
@@ -667,58 +1185,43 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
                           {copied ? "Copied" : "Copy"}
                         </Button>
                       </div>
-                      <p className="text-xs text-slate-500">Deploy tx: {deploymentTx.slice(0, 14)}...{deploymentTx.slice(-10)}</p>
-                      <p className="text-xs text-slate-500">Feature setup tx: {moduleTx.slice(0, 14)}...{moduleTx.slice(-10)}</p>
+                      <p className="text-xs text-slate-500">Owner key: {walletAddress ? shortAddress(walletAddress) : "-"}</p>
+                      <p className="text-xs text-slate-500">Network: {deploymentNetwork}</p>
+                      <p className="text-xs text-slate-500">
+                        Deploy tx: {deploymentTx ? `${deploymentTx.slice(0, 14)}...${deploymentTx.slice(-10)}` : "-"}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Feature tx: {moduleTx ? `${moduleTx.slice(0, 14)}...${moduleTx.slice(-10)}` : "-"}
+                      </p>
                     </div>
                   </CardContent>
                 </Card>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Card className="bg-white/95">
-                    <CardHeader>
-                      <CardTitle className="text-lg">Enabled features</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ul className="space-y-2 text-sm text-slate-700">
-                        <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Time locked admin actions</li>
-                        <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Policy based spending limits</li>
-                        <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Sub-account controls</li>
-                        <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Session based fast approvals</li>
-                      </ul>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-white/95">
-                    <CardHeader>
-                      <CardTitle className="text-lg">Next actions</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ul className="space-y-2 text-sm text-slate-700">
-                        <li>Issue virtual card</li>
-                        <li>Request IBAN rails</li>
-                        <li>Add team members</li>
-                        <li>Set transfer allowlists</li>
-                      </ul>
-                    </CardContent>
-                  </Card>
-                </div>
-
                 <div className="flex flex-wrap gap-3">
-                  <Button asChild>
-                    <Link href="/dashboard" onClick={() => onOpenChange(false)}>
-                      Open dashboard
-                    </Link>
+                  {sessionReady ? (
+                    <Button asChild>
+                      <Link href="/dashboard" onClick={() => onOpenChange(false)}>
+                        Open dashboard
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button disabled>Open dashboard</Button>
+                  )}
+
+                  <Button variant="outline" onClick={resetFlow}>
+                    Start another setup
                   </Button>
-                  <Button variant="outline" onClick={resetFlow}>Start another setup</Button>
                 </div>
               </div>
             ) : null}
 
-            {step < 4 ? (
+            {currentStep !== "ready" ? (
               <div className="mt-8 flex items-center justify-between border-t border-border/70 pt-4">
-                <Button variant="ghost" onClick={goBack} disabled={step === 0 || deploying}>
+                <Button variant="ghost" onClick={goBack} disabled={stepIndex === 0 || deploying}>
                   Back
                 </Button>
-                {step < 3 ? (
+
+                {currentStep !== "deploy" ? (
                   <Button onClick={goNext} disabled={!canContinue || deploying}>
                     Continue
                     <ArrowRight className="h-4 w-4" />

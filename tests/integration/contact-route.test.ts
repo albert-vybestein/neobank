@@ -9,7 +9,8 @@ function buildRequest(payload: unknown, ip = "127.0.0.1") {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-forwarded-for": ip
+      "x-forwarded-for": ip,
+      origin: "http://localhost"
     },
     body: JSON.stringify(payload)
   }) as unknown as NextRequest;

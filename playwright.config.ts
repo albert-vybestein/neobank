@@ -15,7 +15,7 @@ export default defineConfig({
     trace: "on-first-retry"
   },
   webServer: {
-    command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
+    command: `NEXT_PUBLIC_SAFE_WALLET_MODE=mock SAFE_DEPLOY_MODE=mock NEXT_PUBLIC_PRIVY_APP_ID= PRIVY_APP_ID= PRIVY_APP_SECRET= npm run dev -- --hostname 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}`,
     timeout: 180_000,
     reuseExistingServer: true

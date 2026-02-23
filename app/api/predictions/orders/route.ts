@@ -1,38 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getValidationMessage } from "@/lib/server/api";
+import { SESSION_COOKIE_NAME, getAuthSessionByToken } from "@/lib/server/auth-adapter";
 import { savePredictionOrder } from "@/lib/server/activity-adapter";
 import { checkRateLimit } from "@/lib/server/rate-limit";
-import { getClientKey, parseJsonBody } from "@/lib/server/request";
+import { getClientKey, getCookieValue, parseJsonBody } from "@/lib/server/request";
+import { applyApiNoStoreHeaders, ensureTrustedOrigin } from "@/lib/server/security";
 import { predictionOrderSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const untrusted = ensureTrustedOrigin(request);
+  if (untrusted) return applyApiNoStoreHeaders(untrusted);
+
+  const token = getCookieValue(request, SESSION_COOKIE_NAME);
+  const session = await getAuthSessionByToken(token);
+  if (!session) {
+    return applyApiNoStoreHeaders(NextResponse.json({ error: "Not authenticated" }, { status: 401 }));
+  }
+
   const clientKey = getClientKey(request);
   const rateLimit = checkRateLimit(`prediction-orders:${clientKey}`, { max: 30, windowMs: 60_000 });
 
   if (!rateLimit.allowed) {
-    return NextResponse.json({ error: "Order limit reached. Try again shortly." }, { status: 429 });
+    return applyApiNoStoreHeaders(
+      NextResponse.json({ error: "Order limit reached. Try again shortly." }, { status: 429 })
+    );
   }
 
   const payload = await parseJsonBody<unknown>(request);
   if (!payload) {
-    return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+    return applyApiNoStoreHeaders(NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 }));
   }
 
   try {
     const parsed = predictionOrderSchema.parse(payload);
     const order = await savePredictionOrder(parsed);
 
-    return NextResponse.json({
-      ok: true,
-      id: order.id,
-      status: order.status,
-      createdAt: order.createdAt
-    });
+    return applyApiNoStoreHeaders(
+      NextResponse.json({
+        ok: true,
+        id: order.id,
+        status: order.status,
+        createdAt: order.createdAt
+      })
+    );
   } catch (error) {
-    return NextResponse.json({ error: getValidationMessage(error) }, { status: 400 });
+    return applyApiNoStoreHeaders(NextResponse.json({ error: getValidationMessage(error) }, { status: 400 }));
   }
 }

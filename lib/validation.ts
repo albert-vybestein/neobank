@@ -1,8 +1,15 @@
 import { z } from "zod";
 
 const addressRegex = /^0x[a-fA-F0-9]{40}$/;
+const signatureRegex = /^0x[a-fA-F0-9]+$/;
+const hashRegex = /^0x[a-fA-F0-9]{64}$/;
+
+export const evmAddressSchema = z.string().regex(addressRegex, "Invalid address");
+export const signatureSchema = z.string().regex(signatureRegex, "Invalid signature");
+export const hashSchema = z.string().regex(hashRegex, "Invalid hash");
 
 export const connectorSchema = z.enum(["passkey", "walletconnect", "injected"]);
+export const authMethodSchema = z.enum(["wallet", "passkey"]);
 
 export const accountTypeSchema = z.enum(["personal", "joint", "business", "sub-account"]);
 
@@ -23,12 +30,33 @@ export const subAccountSchema = z.object({
 });
 
 export const safeSetupRequestSchema = z.object({
-  walletAddress: z.string().regex(addressRegex, "Invalid wallet address"),
+  walletAddress: evmAddressSchema,
   accountType: accountTypeSchema,
   baseCurrency: z.enum(["EUR", "USD", "GBP"]),
   accountName: z.string().trim().min(1).max(64),
   subAccounts: z.array(subAccountSchema).max(20),
-  modules: safeModuleConfigSchema
+  modules: safeModuleConfigSchema,
+  passkeyDeploymentTx: z
+    .object({
+      to: evmAddressSchema,
+      data: z.string().regex(signatureRegex, "Invalid passkey deployment call data"),
+      value: z.string().trim().min(1).max(80)
+    })
+    .optional()
+});
+
+export const safeDeploymentRegisterSchema = z.object({
+  walletAddress: evmAddressSchema,
+  safeAddress: evmAddressSchema,
+  deploymentTxHash: hashSchema,
+  moduleTxHash: hashSchema,
+  accountType: accountTypeSchema,
+  baseCurrency: z.enum(["EUR", "USD", "GBP"]),
+  accountName: z.string().trim().min(1).max(64),
+  subAccounts: z.array(subAccountSchema).max(20),
+  modules: safeModuleConfigSchema,
+  network: z.string().trim().min(1).max(32).optional().default("sepolia"),
+  mode: z.enum(["mock", "real"]).optional().default("real")
 });
 
 export const contactSubmissionSchema = z.object({
@@ -99,6 +127,29 @@ export const dashboardDataSchema = z.object({
   predictionEvents: z.array(predictionEventSchema).min(1)
 });
 
+export const authChallengeRequestSchema = z.object({
+  walletAddress: evmAddressSchema,
+  safeAddress: evmAddressSchema
+});
+
+export const authVerifyRequestSchema = z.object({
+  walletAddress: evmAddressSchema,
+  safeAddress: evmAddressSchema,
+  signature: signatureSchema,
+  nonce: hashSchema,
+  authMethod: authMethodSchema.optional().default("wallet")
+});
+
+export const privySessionRequestSchema = z.object({
+  walletAddress: evmAddressSchema,
+  safeAddress: evmAddressSchema,
+  accessToken: z.string().trim().min(20).max(10000)
+});
+
+export const findSafeByOwnerSchema = z.object({
+  owner: evmAddressSchema
+});
+
 export type Connector = z.infer<typeof connectorSchema>;
 export type SafeSetupRequestInput = z.infer<typeof safeSetupRequestSchema>;
 export type ContactSubmissionInput = z.infer<typeof contactSubmissionSchema>;
@@ -106,3 +157,7 @@ export type AnalyticsEventInput = z.infer<typeof analyticsEventSchema>;
 export type TradeOrderInput = z.infer<typeof tradeOrderSchema>;
 export type PredictionOrderInput = z.infer<typeof predictionOrderSchema>;
 export type DashboardDataInput = z.infer<typeof dashboardDataSchema>;
+export type AuthChallengeRequestInput = z.infer<typeof authChallengeRequestSchema>;
+export type AuthVerifyRequestInput = z.infer<typeof authVerifyRequestSchema>;
+export type PrivySessionRequestInput = z.infer<typeof privySessionRequestSchema>;
+export type SafeDeploymentRegisterInput = z.infer<typeof safeDeploymentRegisterSchema>;

@@ -39,7 +39,7 @@ body {
     radial-gradient(circle at 0% -10%, rgba(45, 102, 255, 0.14), transparent 44%),
     radial-gradient(circle at 92% 6%, rgba(0, 197, 255, 0.1), transparent 38%),
     linear-gradient(180deg, #ffffff 0%, #f6f8fc 45%, #f9fafc 100%);
-  background-attachment: fixed;
+  background-attachment: scroll;
 }
 
 body::before {
@@ -76,6 +76,7 @@ h4 {
   border-radius: 9999px;
   filter: blur(46px);
   opacity: 0.5;
+  will-change: transform;
 }
 
 .hero-light-a {
@@ -168,6 +169,18 @@ h4 {
   }
   50% {
     transform: translate3d(-20px, -20px, 0);
+  }
+}
+
+@media (min-width: 1024px) {
+  body {
+    background-attachment: fixed;
+  }
+}
+
+@media (max-width: 767px) {
+  body::before {
+    display: none;
   }
 }
 

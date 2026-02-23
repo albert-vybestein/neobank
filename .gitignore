@@ -25,3 +25,6 @@ playwright-report/
 
 # typescript
 *.tsbuildinfo
+
+# local runtime data
+.data/

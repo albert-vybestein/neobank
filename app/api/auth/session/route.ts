@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { SESSION_COOKIE_NAME, getAuthSessionByToken } from "@/lib/server/auth-adapter";
-import { getDashboardData } from "@/lib/server/dashboard-adapter";
 import { getCookieValue } from "@/lib/server/request";
 import { applyApiNoStoreHeaders } from "@/lib/server/security";
 
@@ -13,18 +12,15 @@ export async function GET(request: NextRequest) {
   const session = await getAuthSessionByToken(token);
 
   if (!session) {
-    return applyApiNoStoreHeaders(NextResponse.json({ error: "Not authenticated" }, { status: 401 }));
+    return applyApiNoStoreHeaders(NextResponse.json({ authenticated: false }, { status: 401 }));
   }
-
-  const data = await getDashboardData();
 
   return applyApiNoStoreHeaders(
     NextResponse.json({
       authenticated: true,
-      safeAddress: session.safeAddress,
       walletAddress: session.walletAddress,
-      data,
-      fetchedAt: new Date().toISOString()
+      safeAddress: session.safeAddress,
+      expiresAt: session.expiresAt
     })
   );
 }

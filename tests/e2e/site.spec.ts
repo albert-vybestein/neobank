@@ -14,23 +14,23 @@ test("sign in flow deploys and opens dashboard", async ({ page }) => {
   await page.goto("/");
 
   await page.getByRole("button", { name: "Sign in" }).first().click();
-  await expect(page.getByRole("heading", { name: "Connect to begin" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Choose access method" })).toBeVisible();
 
-  await page.getByRole("button", { name: /Connect Passkey/i }).click();
+  await page.getByRole("button", { name: "Connect browser wallet" }).click();
   await expect(page.getByText("Connected")).toBeVisible();
 
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
 
-  await expect(page.getByRole("heading", { name: "Review and deploy" })).toBeVisible();
-  await page.getByRole("button", { name: "Deploy account" }).click();
+  await expect(page.getByRole("heading", { name: "Deploy account" })).toBeVisible();
+  await page.getByRole("button", { name: "Authenticate and deploy" }).click();
 
-  await expect(page.getByRole("heading", { name: "Account deployed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Account ready" })).toBeVisible();
   await page.getByRole("link", { name: "Open dashboard" }).click();
 
   await expect(page).toHaveURL(/\/dashboard/);
-  await expect(page.getByRole("heading", { name: /command center/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /banking workspace/i })).toBeVisible();
 });
 
 test("contact form submits successfully", async ({ page }) => {
@@ -44,6 +44,20 @@ test("contact form submits successfully", async ({ page }) => {
   await expect(page.getByText("Thanks. Your message was sent.")).toBeVisible();
 });
 
+test("product page highlights core neobank features", async ({ page }) => {
+  await page.goto("/product");
+
+  await expect(
+    page.getByRole("heading", {
+      name: /everything you expect from a neobank/i
+    })
+  ).toBeVisible();
+
+  await expect(page.getByRole("heading", { name: "Cards" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Shared accounts" })).toBeVisible();
+  await expect(page.getByText("Sign in to connect and deploy your account setup with policy modules.")).toBeVisible();
+});
+
 test.describe("responsive and motion", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -51,7 +65,7 @@ test.describe("responsive and motion", () => {
     await page.goto("/");
 
     await page.getByRole("button", { name: "Toggle navigation menu" }).click();
-    await page.getByRole("link", { name: "Pricing" }).click();
+    await page.locator("#mobile-menu").getByRole("link", { name: "Pricing" }).click();
 
     await expect(page).toHaveURL(/\/pricing/);
   });
@@ -62,6 +76,6 @@ test.describe("responsive and motion", () => {
 
     await expect(page.locator(".hero-light").first()).toBeHidden();
     await page.getByRole("button", { name: "Sign in" }).first().click();
-    await expect(page.getByRole("heading", { name: "Connect to begin" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Choose access method" })).toBeVisible();
   });
 });

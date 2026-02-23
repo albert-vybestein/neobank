@@ -40,6 +40,8 @@ type SignInFlowModalProps = {
 
 type Journey = "create" | "sign-in";
 type StepKey = "access" | "account" | "features" | "deploy" | "ready";
+type AccessKeyMode = "reuse" | "new";
+type FeaturePresetId = "everyday" | "family" | "global" | "investor";
 
 type ExistingDeployment = {
   safeAddress: string;
@@ -63,6 +65,13 @@ type FeatureRow = {
   title: string;
   description: string;
   enabledBy: string;
+};
+
+type FeaturePreset = {
+  id: FeaturePresetId;
+  title: string;
+  description: string;
+  modules: SafeModuleConfig;
 };
 
 const stepLabels: Record<StepKey, string> = {
@@ -183,6 +192,69 @@ const initialModules: SafeModuleConfig = {
   timeLockHours: 24
 };
 
+const featurePresets: FeaturePreset[] = [
+  {
+    id: "everyday",
+    title: "Everyday",
+    description: "Balanced controls for daily spending and transfers.",
+    modules: {
+      guildDelay: true,
+      guildRoles: true,
+      guildAllowance: true,
+      guildRecovery: true,
+      rhinestoneSessions: true,
+      rhinestoneSpendingPolicy: true,
+      rhinestoneAutomation: false,
+      timeLockHours: 24
+    }
+  },
+  {
+    id: "family",
+    title: "Family",
+    description: "Stronger approvals and safer shared account defaults.",
+    modules: {
+      guildDelay: true,
+      guildRoles: true,
+      guildAllowance: true,
+      guildRecovery: true,
+      rhinestoneSessions: true,
+      rhinestoneSpendingPolicy: true,
+      rhinestoneAutomation: true,
+      timeLockHours: 36
+    }
+  },
+  {
+    id: "global",
+    title: "Global travel",
+    description: "Faster session approvals with policy guardrails while abroad.",
+    modules: {
+      guildDelay: true,
+      guildRoles: true,
+      guildAllowance: true,
+      guildRecovery: true,
+      rhinestoneSessions: true,
+      rhinestoneSpendingPolicy: true,
+      rhinestoneAutomation: true,
+      timeLockHours: 12
+    }
+  },
+  {
+    id: "investor",
+    title: "Active investor",
+    description: "Automation and spending policies on by default for market workflows.",
+    modules: {
+      guildDelay: true,
+      guildRoles: true,
+      guildAllowance: true,
+      guildRecovery: true,
+      rhinestoneSessions: false,
+      rhinestoneSpendingPolicy: true,
+      rhinestoneAutomation: true,
+      timeLockHours: 18
+    }
+  }
+];
+
 const PRIVY_CONFIGURED = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID?.trim());
 
 function delay(ms: number) {
@@ -273,6 +345,8 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
   const [stepIndex, setStepIndex] = useState(0);
 
   const [selectedAccessMethod, setSelectedAccessMethod] = useState<PrivyLoginMethod>("passkey");
+  const [accessProfileName, setAccessProfileName] = useState("Main passkey");
+  const [accessKeyMode, setAccessKeyMode] = useState<AccessKeyMode>("reuse");
 
   const [accountType, setAccountType] = useState<AccountType>("personal");
   const [accountName, setAccountName] = useState("Main account");
@@ -286,6 +360,7 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
   ]);
 
   const [modules, setModules] = useState<SafeModuleConfig>(initialModules);
+  const [selectedFeaturePreset, setSelectedFeaturePreset] = useState<FeaturePresetId>("everyday");
   const [preferExistingSafe, setPreferExistingSafe] = useState(true);
 
   const [deploying, setDeploying] = useState(false);
@@ -350,6 +425,8 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
     setJourney("create");
     setStepIndex(0);
     setSelectedAccessMethod("passkey");
+    setAccessProfileName("Main passkey");
+    setAccessKeyMode("reuse");
 
     setAccountType("personal");
     setAccountName("Main account");
@@ -361,6 +438,7 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
       { id: "travel", name: "Travel", spendingLimit: "1200" }
     ]);
     setModules(initialModules);
+    setSelectedFeaturePreset("everyday");
     setPreferExistingSafe(true);
 
     setDeploying(false);
@@ -458,11 +536,19 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
 
     await ensurePrivyAuthentication();
 
-    const existingWallet = await waitForWalletProvider();
-    if (existingWallet) {
-      const provider = await existingWallet.getEthereumProvider();
-      setWalletAddress(existingWallet.address);
-      return { ownerAddress: existingWallet.address, ownerProvider: provider };
+    const shouldCreateNewKey = selectedAccessMethod !== "wallet" && accessKeyMode === "new";
+
+    if (!shouldCreateNewKey) {
+      const existingWallet = await waitForWalletProvider();
+      if (existingWallet) {
+        const provider = await existingWallet.getEthereumProvider();
+        setWalletAddress(existingWallet.address);
+        return { ownerAddress: existingWallet.address, ownerProvider: provider };
+      }
+    }
+
+    if (selectedAccessMethod === "wallet") {
+      throw new Error("No wallet was found for this sign in method. Connect a wallet in the login prompt and retry.");
     }
 
     const created = await createWallet();
@@ -529,7 +615,9 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
 
         void trackEvent("safe_login_existing_success", {
           authMethod: selectedAccessMethod,
-          safeAddress: existing.safeAddress
+          safeAddress: existing.safeAddress,
+          accessProfileName,
+          accessKeyMode
         });
 
         return;
@@ -548,7 +636,9 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
 
         void trackEvent("safe_login_existing_success", {
           authMethod: selectedAccessMethod,
-          safeAddress: existing.safeAddress
+          safeAddress: existing.safeAddress,
+          accessProfileName,
+          accessKeyMode
         });
 
         return;
@@ -581,7 +671,9 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
         accountType,
         features: enabledFeatureCount,
         authMethod: selectedAccessMethod,
-        mode: deployed.mode ?? "mock"
+        mode: deployed.mode ?? "mock",
+        accessProfileName,
+        accessKeyMode
       });
     } catch (error) {
       const message = normalizeFlowErrorMessage(error, selectedAccessMethod);
@@ -592,6 +684,16 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
       setDeploying(false);
       setDeployPhaseIndex(0);
     }
+  };
+
+  const applyFeaturePreset = (presetId: FeaturePresetId) => {
+    const preset = featurePresets.find((entry) => entry.id === presetId);
+    if (!preset) return;
+
+    setSelectedFeaturePreset(presetId);
+    setModules({ ...preset.modules });
+    setFlowError("");
+    void trackEvent("signup_feature_preset_applied", { presetId });
   };
 
   const addSubAccount = () => {
@@ -819,6 +921,59 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
                 )}
 
                 <Card className="bg-white/95">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Access profile</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <label htmlFor="access-profile-name" className="text-sm font-medium text-slate-700">
+                        Profile label
+                      </label>
+                      <input
+                        id="access-profile-name"
+                        value={accessProfileName}
+                        onChange={(event) => setAccessProfileName(event.target.value)}
+                        className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        placeholder="Main passkey"
+                        maxLength={40}
+                      />
+                    </div>
+
+                    {PRIVY_CONFIGURED && selectedAccessMethod !== "wallet" ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Key handling at deploy</p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={() => setAccessKeyMode("reuse")}
+                            className={`rounded-xl border p-3 text-left transition ${
+                              accessKeyMode === "reuse"
+                                ? "border-primary bg-blue-50"
+                                : "border-border/80 bg-white hover:bg-slate-50"
+                            }`}
+                          >
+                            <p className="text-sm font-semibold text-slate-900">Use existing key</p>
+                            <p className="mt-1 text-xs text-slate-500">Recommended for returning users.</p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAccessKeyMode("new")}
+                            className={`rounded-xl border p-3 text-left transition ${
+                              accessKeyMode === "new"
+                                ? "border-primary bg-blue-50"
+                                : "border-border/80 bg-white hover:bg-slate-50"
+                            }`}
+                          >
+                            <p className="text-sm font-semibold text-slate-900">Create new key</p>
+                            <p className="mt-1 text-xs text-slate-500">Use this if your previous key was lost or reset.</p>
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white/95">
                   <CardContent className="space-y-2 p-5 text-sm text-slate-600">
                     <p className="font-semibold text-slate-900">What happens at deploy</p>
                     <p>1. You authenticate with the method selected above.</p>
@@ -965,6 +1120,24 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
                   </CardContent>
                 </Card>
 
+                <div className="grid gap-3 md:grid-cols-4">
+                  {featurePresets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyFeaturePreset(preset.id)}
+                      className={`rounded-2xl border p-4 text-left transition ${
+                        selectedFeaturePreset === preset.id
+                          ? "border-primary bg-blue-50"
+                          : "border-border/80 bg-white hover:bg-slate-50"
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-slate-900">{preset.title}</p>
+                      <p className="mt-1 text-xs text-slate-500">{preset.description}</p>
+                    </button>
+                  ))}
+                </div>
+
                 <div className="grid gap-4 lg:grid-cols-2">
                   {featureRows.map((row) => (
                     <ToggleRow
@@ -1033,6 +1206,15 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
                         <span className="font-semibold">Access method:</span>{" "}
                         {selectedAccessMethod === "twitter" ? "X" : selectedAccessMethod}
                       </p>
+                      <p>
+                        <span className="font-semibold">Access profile:</span> {accessProfileName || "Main access"}
+                      </p>
+                      {selectedAccessMethod !== "wallet" ? (
+                        <p>
+                          <span className="font-semibold">Key mode:</span>{" "}
+                          {accessKeyMode === "new" ? "Create new key at deploy" : "Use existing key if available"}
+                        </p>
+                      ) : null}
                       {journey === "create" ? (
                         <>
                           <p>
@@ -1186,6 +1368,7 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
                         </Button>
                       </div>
                       <p className="text-xs text-slate-500">Owner key: {walletAddress ? shortAddress(walletAddress) : "-"}</p>
+                      <p className="text-xs text-slate-500">Access profile: {accessProfileName || "Main access"}</p>
                       <p className="text-xs text-slate-500">Network: {deploymentNetwork}</p>
                       <p className="text-xs text-slate-500">
                         Deploy tx: {deploymentTx ? `${deploymentTx.slice(0, 14)}...${deploymentTx.slice(-10)}` : "-"}

@@ -68,17 +68,31 @@ type ConsumerProductId =
   | "family-shared-wallet"
   | "subscription-guardian"
   | "travel-mode-wallet"
-  | "market-guard-account";
+  | "market-guard-account"
+  | "salary-stream-split"
+  | "teen-spend-card"
+  | "bill-autopilot"
+  | "emergency-lock"
+  | "round-up-saver";
 
 type ConsumerProduct = {
   id: ConsumerProductId;
   name: string;
-  category: "Cash growth" | "Savings" | "Family" | "Spending control" | "Travel" | "Investing";
+  category:
+    | "Cash growth"
+    | "Savings"
+    | "Family"
+    | "Spending control"
+    | "Travel"
+    | "Investing"
+    | "Income automation"
+    | "Youth banking";
   summary: string;
   customerValue: string;
+  controlBehavior: string;
   moduleMapping: string;
   defaultEnabled: boolean;
-  status: "Live" | "Pilot";
+  status: "Live" | "Pilot" | "Coming soon";
 };
 
 type AccountFeatureState = {
@@ -251,6 +265,7 @@ const consumerProducts: ConsumerProduct[] = [
     category: "Cash growth",
     summary: "Automatically moves idle cash into curated low-volatility yield vaults.",
     customerValue: "Grow everyday balances without managing protocols manually.",
+    controlBehavior: "Enables scheduled sweeps with conservative destination allowlists.",
     moduleMapping: "Rhinestone Automation + Gnosis Guild Allowance",
     defaultEnabled: true,
     status: "Live"
@@ -261,6 +276,7 @@ const consumerProducts: ConsumerProduct[] = [
     category: "Savings",
     summary: "Creates goal-based savings pots with optional unlock delays.",
     customerValue: "Protect savings from impulse spending and hit targets faster.",
+    controlBehavior: "Adds delayed withdrawals and high-value review windows.",
     moduleMapping: "Gnosis Guild Delay + Safe smart account policies",
     defaultEnabled: true,
     status: "Live"
@@ -271,6 +287,7 @@ const consumerProducts: ConsumerProduct[] = [
     category: "Family",
     summary: "Shared spending account with role-based limits and approvals.",
     customerValue: "Run household money safely across partners and dependents.",
+    controlBehavior: "Requires multi-approval for key actions and member-level limits.",
     moduleMapping: "Gnosis Guild Roles + Allowance",
     defaultEnabled: true,
     status: "Live"
@@ -281,6 +298,7 @@ const consumerProducts: ConsumerProduct[] = [
     category: "Spending control",
     summary: "Caps recurring debits and lets users pause merchants in one tap.",
     customerValue: "Avoid billing leakage and recurring charge surprises.",
+    controlBehavior: "Applies recurring charge caps with merchant-level stop controls.",
     moduleMapping: "Gnosis Guild Allowance + Rhinestone policy controls",
     defaultEnabled: true,
     status: "Live"
@@ -291,6 +309,7 @@ const consumerProducts: ConsumerProduct[] = [
     category: "Travel",
     summary: "Temporary higher card/session limits with automatic reversion windows.",
     customerValue: "Spend smoothly while traveling without sacrificing safety.",
+    controlBehavior: "Temporarily increases session limits and auto-reverts after travel.",
     moduleMapping: "Rhinestone Session Keys + Gnosis Guild Delay",
     defaultEnabled: false,
     status: "Pilot"
@@ -301,7 +320,63 @@ const consumerProducts: ConsumerProduct[] = [
     category: "Investing",
     summary: "Risk-scoped investing account with leverage and loss guardrails.",
     customerValue: "Access market products with built-in downside controls.",
+    controlBehavior: "Adds leverage caps and daily loss guardrails before execution.",
     moduleMapping: "Rhinestone policy module + Safe guard rules",
+    defaultEnabled: true,
+    status: "Live"
+  },
+  {
+    id: "salary-stream-split",
+    name: "Salary Stream Split",
+    category: "Income automation",
+    summary: "Automatically divides inbound salary into bills, savings, and investing buckets.",
+    customerValue: "Run your monthly plan on autopilot from first deposit.",
+    controlBehavior: "Sets recurring split rules and destination allowlists.",
+    moduleMapping: "Rhinestone Automation + Gnosis Guild Allowance",
+    defaultEnabled: false,
+    status: "Pilot"
+  },
+  {
+    id: "teen-spend-card",
+    name: "Teen Spend Card",
+    category: "Youth banking",
+    summary: "Sub-account card with category limits and parent approvals.",
+    customerValue: "Teach healthy money habits with safety rails by default.",
+    controlBehavior: "Enforces shared approvals, category controls, and strict allowlists.",
+    moduleMapping: "Gnosis Guild Roles + Rhinestone Policy",
+    defaultEnabled: false,
+    status: "Coming soon"
+  },
+  {
+    id: "bill-autopilot",
+    name: "Bill Autopilot",
+    category: "Spending control",
+    summary: "Pays verified recurring bills automatically with fail-safe caps.",
+    customerValue: "Never miss essentials while keeping bill spend in bounds.",
+    controlBehavior: "Automates approved recipients and pauses over-cap payments.",
+    moduleMapping: "Rhinestone Automation + Gnosis Guild Allowance",
+    defaultEnabled: true,
+    status: "Live"
+  },
+  {
+    id: "emergency-lock",
+    name: "Emergency Lock",
+    category: "Family",
+    summary: "Instantly tighten account permissions during suspicious activity.",
+    customerValue: "Buy time to review without freezing all daily money movement.",
+    controlBehavior: "Disables trusted sessions and increases recovery and review delay.",
+    moduleMapping: "Gnosis Guild Delay + Recovery + Rhinestone Sessions",
+    defaultEnabled: false,
+    status: "Live"
+  },
+  {
+    id: "round-up-saver",
+    name: "Round-up Saver",
+    category: "Savings",
+    summary: "Rounds card purchases and sends spare change into a savings pot.",
+    customerValue: "Build savings quietly with everyday spending.",
+    controlBehavior: "Triggers small automatic sweeps into protected savings buckets.",
+    moduleMapping: "Rhinestone Automation + Safe smart account policies",
     defaultEnabled: true,
     status: "Live"
   }
@@ -514,7 +589,8 @@ export default function DashboardPage() {
     !accountFeatures.marketRiskLimits ||
     (leverage <= accountFeatures.marketMaxLeverage &&
       tradeStressLossEstimate <= accountFeatures.marketDailyLossLimit);
-  const enabledProductCount = consumerProducts.filter((product) => productEnrollment[product.id]).length;
+  const activatableProducts = consumerProducts.filter((product) => product.status !== "Coming soon");
+  const enabledProductCount = activatableProducts.filter((product) => productEnrollment[product.id]).length;
   const simulatedTransferAmount = 3200;
   const transferRequiresReview =
     accountFeatures.transferReviewDelay && simulatedTransferAmount >= accountFeatures.transferReviewThreshold;
@@ -676,6 +752,15 @@ export default function DashboardPage() {
   };
 
   const toggleConsumerProduct = (productId: ConsumerProductId) => {
+    const selectedProduct = consumerProducts.find((product) => product.id === productId);
+    if (!selectedProduct) return;
+
+    if (selectedProduct.status === "Coming soon") {
+      setProductMessage(`${selectedProduct.name} is coming soon and not yet available in this workspace.`);
+      void trackEvent("consumer_product_toggle_blocked", { productId, reason: "coming-soon" });
+      return;
+    }
+
     setProductEnrollment((current) => {
       const enabled = !current[productId];
       const next = { ...current, [productId]: enabled };
@@ -721,6 +806,48 @@ export default function DashboardPage() {
             ...featureState,
             marketRiskLimits: true,
             marketMaxLeverage: Math.min(featureState.marketMaxLeverage, 5)
+          }));
+        }
+        if (productId === "salary-stream-split") {
+          setAccountFeatures((featureState) => ({
+            ...featureState,
+            automationRules: true,
+            autoSweepPercent: Math.max(featureState.autoSweepPercent, 25),
+            recipientAllowlists: true
+          }));
+        }
+        if (productId === "teen-spend-card") {
+          setAccountFeatures((featureState) => ({
+            ...featureState,
+            sharedApprovalRoles: true,
+            sharedApprovalsRequired: Math.max(featureState.sharedApprovalsRequired, 2),
+            recipientAllowlists: true,
+            transferReviewDelay: true
+          }));
+        }
+        if (productId === "bill-autopilot") {
+          setAccountFeatures((featureState) => ({
+            ...featureState,
+            automationRules: true,
+            subscriptionCaps: true,
+            subscriptionMonthlyCap: Math.max(featureState.subscriptionMonthlyCap, 900)
+          }));
+        }
+        if (productId === "emergency-lock") {
+          setAccountFeatures((featureState) => ({
+            ...featureState,
+            transferReviewDelay: true,
+            transferReviewDelayHours: Math.max(featureState.transferReviewDelayHours, 48),
+            trustedSessions: false,
+            recoveryProtection: true,
+            recoveryDelayHours: Math.max(featureState.recoveryDelayHours, 48)
+          }));
+        }
+        if (productId === "round-up-saver") {
+          setAccountFeatures((featureState) => ({
+            ...featureState,
+            automationRules: true,
+            autoSweepPercent: Math.max(featureState.autoSweepPercent, 12)
           }));
         }
       }
@@ -829,7 +956,7 @@ export default function DashboardPage() {
               <Card className="bg-white/90">
                 <CardContent className="p-4">
                   <p className="text-xs font-medium text-slate-500">Active products</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900">{enabledProductCount}/{consumerProducts.length}</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">{enabledProductCount}/{activatableProducts.length}</p>
                   <p className="mt-1 text-xs text-slate-500">Consumer financial products enabled</p>
                 </CardContent>
               </Card>
@@ -916,12 +1043,18 @@ export default function DashboardPage() {
                           <Badge
                             variant="outline"
                             className={
-                              productEnrollment[product.id]
+                              product.status === "Coming soon"
+                                ? "bg-amber-50 text-amber-700"
+                                : productEnrollment[product.id]
                                 ? "bg-emerald-50 text-emerald-700"
                                 : "bg-slate-100 text-slate-700"
                             }
                           >
-                            {productEnrollment[product.id] ? "Enabled" : "Disabled"}
+                            {product.status === "Coming soon"
+                              ? "Coming soon"
+                              : productEnrollment[product.id]
+                                ? "Enabled"
+                                : "Disabled"}
                           </Badge>
                         </div>
                         <p className="mt-1 text-xs text-slate-500">{product.category}</p>
@@ -1522,6 +1655,7 @@ export default function DashboardPage() {
                   <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {consumerProducts.map((product) => {
                       const enabled = productEnrollment[product.id];
+                      const isComingSoon = product.status === "Coming soon";
                       return (
                         <Card key={product.id} className="bg-white">
                           <CardContent className="space-y-3 p-4">
@@ -1529,9 +1663,15 @@ export default function DashboardPage() {
                               <p className="text-base font-semibold text-slate-900">{product.name}</p>
                               <Badge
                                 variant="outline"
-                                className={enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"}
+                                className={
+                                  isComingSoon
+                                    ? "bg-amber-50 text-amber-700"
+                                    : enabled
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-slate-100 text-slate-700"
+                                }
                               >
-                                {enabled ? "Enabled" : "Disabled"}
+                                {isComingSoon ? "Coming soon" : enabled ? "Enabled" : "Disabled"}
                               </Badge>
                             </div>
                             <p className="text-xs text-slate-500">{product.category} · {product.status}</p>
@@ -1543,11 +1683,12 @@ export default function DashboardPage() {
                             <p className="text-xs text-slate-500">Powered by {product.moduleMapping}</p>
                             <Button
                               type="button"
-                              variant={enabled ? "outline" : "default"}
+                              variant={enabled || isComingSoon ? "outline" : "default"}
                               className="w-full"
                               onClick={() => toggleConsumerProduct(product.id)}
+                              disabled={isComingSoon}
                             >
-                              {enabled ? "Disable product" : "Enable product"}
+                              {isComingSoon ? "Coming soon" : enabled ? "Disable product" : "Enable product"}
                             </Button>
                           </CardContent>
                         </Card>
@@ -1564,42 +1705,26 @@ export default function DashboardPage() {
                     </p>
                   </CardHeader>
                   <CardContent className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-xl border border-border/70 bg-slate-50 p-3">
-                      <p className="text-sm font-semibold text-slate-900">Income Vault</p>
-                      <p className="mt-1 text-xs text-slate-600">
-                        Enables automation rules and recurring allocation sweeps.
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-border/70 bg-slate-50 p-3">
-                      <p className="text-sm font-semibold text-slate-900">Goal Lock Pot</p>
-                      <p className="mt-1 text-xs text-slate-600">
-                        Activates transfer review windows and delayed unlock behavior.
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-border/70 bg-slate-50 p-3">
-                      <p className="text-sm font-semibold text-slate-900">Family Shared Wallet</p>
-                      <p className="mt-1 text-xs text-slate-600">
-                        Enforces shared approvals and role-based spending controls.
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-border/70 bg-slate-50 p-3">
-                      <p className="text-sm font-semibold text-slate-900">Subscription Guardian</p>
-                      <p className="mt-1 text-xs text-slate-600">
-                        Caps recurring debits and applies merchant-level controls.
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-border/70 bg-slate-50 p-3">
-                      <p className="text-sm font-semibold text-slate-900">Travel Mode Wallet</p>
-                      <p className="mt-1 text-xs text-slate-600">
-                        Expands trusted session limits for a defined travel period.
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-border/70 bg-slate-50 p-3">
-                      <p className="text-sm font-semibold text-slate-900">Market Guard Account</p>
-                      <p className="mt-1 text-xs text-slate-600">
-                        Applies leverage caps and daily stress loss limits to trading actions.
-                      </p>
-                    </div>
+                    {consumerProducts.map((product) => (
+                      <div key={`${product.id}-mapping`} className="rounded-xl border border-border/70 bg-slate-50 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-900">{product.name}</p>
+                          <Badge
+                            variant="outline"
+                            className={
+                              product.status === "Coming soon"
+                                ? "bg-amber-50 text-amber-700"
+                                : product.status === "Pilot"
+                                  ? "bg-blue-50 text-blue-700"
+                                  : "bg-emerald-50 text-emerald-700"
+                            }
+                          >
+                            {product.status}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-600">{product.controlBehavior}</p>
+                      </div>
+                    ))}
                   </CardContent>
                 </Card>
 

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Briefcase, Compass, Eye, Shield, UserCircle2 } from "lucide-react";
 
@@ -52,6 +53,33 @@ const roles = [
   }
 ];
 
+const leadershipTeam = [
+  {
+    name: "Albert Vybestein",
+    role: "CEO",
+    image: "/team/ceo.jpg",
+    intro:
+      "15-time founder across fintech and software. Listed in Forbes 12 Under 12. Harvard graduate in economics and systems design. Leads product vision and global expansion.",
+    highlights: ["15x founder", "Forbes 12 Under 12", "Harvard graduate"]
+  },
+  {
+    name: "Alberto Steino",
+    role: "CTO",
+    image: "/team/cto.jpg",
+    intro:
+      "Built payment and data systems used by millions across 30+ countries. Known for shipping high-reliability architecture with clean product UX at scale.",
+    highlights: ["Scaled systems to 30+ countries", "Built 40+ production releases", "Infrastructure and AI specialist"]
+  },
+  {
+    name: "Albo Vybess",
+    role: "COO",
+    image: "/team/coo.jpg",
+    intro:
+      "Operations leader focused on growth and execution. Designed launch playbooks for new markets and built cross-functional teams that keep quality high at speed.",
+    highlights: ["Launch playbooks for global markets", "Operator-first execution", "Built teams across product and ops"]
+  }
+];
+
 export default function CompanyPage() {
   return (
     <>
@@ -84,6 +112,56 @@ export default function CompanyPage() {
                   </CardHeader>
                   <CardContent>
                     <p className="text-base text-slate-600">{principle.body}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </Reveal>
+      </Section>
+
+      <Section>
+        <Reveal>
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <Badge variant="outline" className="bg-white text-slate-700">
+                Leadership
+              </Badge>
+              <h2 className="text-4xl font-semibold text-slate-950 md:text-5xl">Our team</h2>
+              <p className="text-lg text-slate-600">
+                The leadership group combines founder-level speed with production-grade execution across product, engineering, and operations.
+              </p>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-3">
+              {leadershipTeam.map((member) => (
+                <Card key={member.name} className="card-lift overflow-hidden bg-white/95">
+                  <div className="relative aspect-[4/5] overflow-hidden bg-slate-100">
+                    <Image
+                      src={member.image}
+                      alt={`${member.name}, ${member.role}`}
+                      fill
+                      sizes="(max-width: 768px) 100vw, 33vw"
+                      className="object-cover"
+                      priority={member.role === "CEO"}
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/75 to-transparent p-4">
+                      <p className="text-sm font-semibold text-white">{member.role}</p>
+                      <p className="text-lg font-semibold text-white">{member.name}</p>
+                    </div>
+                  </div>
+                  <CardContent className="space-y-4 p-5">
+                    <p className="text-sm leading-relaxed text-slate-700">{member.intro}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {member.highlights.map((highlight) => (
+                        <span
+                          key={`${member.name}-${highlight}`}
+                          className="rounded-full border border-border/80 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600"
+                        >
+                          {highlight}
+                        </span>
+                      ))}
+                    </div>
                   </CardContent>
                 </Card>
               ))}

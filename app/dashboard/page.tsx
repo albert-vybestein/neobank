@@ -908,13 +908,15 @@ export default function DashboardPage() {
             <Badge variant="outline" className="w-fit bg-white text-slate-700">
               Dashboard access
             </Badge>
-            <CardTitle className="text-4xl text-slate-950">Sign in to open your banking workspace</CardTitle>
+            <CardTitle className="text-4xl text-slate-950">Log in to open your banking workspace</CardTitle>
             <p className="text-base text-slate-600">
               Create your secure login, configure your account, and deploy once. Then manage everything from one workspace.
             </p>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
-            <SignInButton size="lg">Sign in</SignInButton>
+            <SignInButton journey="sign-in" size="lg">
+              Log in
+            </SignInButton>
           </CardContent>
         </Card>
       </div>

@@ -10,10 +10,10 @@ test("landing page loads and navigation works", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Plans for personal and global finance." })).toBeVisible();
 });
 
-test("sign in flow deploys and opens dashboard", async ({ page }) => {
+test("create account flow deploys and opens dashboard", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Sign in" }).first().click();
+  await page.getByRole("button", { name: "Create account" }).first().click();
   await expect(page.getByRole("heading", { name: "Choose access method" })).toBeVisible();
 
   await page.getByRole("button", { name: "Connect browser wallet" }).click();
@@ -55,7 +55,7 @@ test("product page highlights core neobank features", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Cards" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Shared accounts" })).toBeVisible();
-  await expect(page.getByText("Sign in to connect and deploy your account setup with policy modules.")).toBeVisible();
+  await expect(page.getByText("Create your account and deploy your setup with policy modules.")).toBeVisible();
 });
 
 test.describe("responsive and motion", () => {
@@ -75,7 +75,7 @@ test.describe("responsive and motion", () => {
     await page.goto("/");
 
     await expect(page.locator(".hero-light").first()).toBeHidden();
-    await page.getByRole("button", { name: "Sign in" }).first().click();
+    await page.getByRole("button", { name: "Log in" }).first().click();
     await expect(page.getByRole("heading", { name: "Choose access method" })).toBeVisible();
   });
 });

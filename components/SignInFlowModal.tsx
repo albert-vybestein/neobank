@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCreateWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import {
   ArrowRight,
@@ -30,12 +30,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trackEvent } from "@/lib/analytics";
 import { getPrivyLoginMethodConfig, type PrivyLoginMethod } from "@/lib/privy";
-import { connectWallet, deploySafeAccount, findSafeByOwner, loginWithSafe } from "@/lib/safe";
-import type { AccountType, SafeModuleConfig } from "@/lib/safe";
+import { connectWallet, deploySafeAccount, findSafeByOwner, getAuthSession, loginWithSafe } from "@/lib/safe";
+import type { AccountType, AuthSessionResponse, SafeModuleConfig } from "@/lib/safe";
 
 type SignInFlowModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialJourney?: Journey;
 };
 
 type Journey = "create" | "sign-in";
@@ -331,7 +332,7 @@ function ToggleRow({
   );
 }
 
-export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
+export function SignInFlowModal({ open, onOpenChange, initialJourney = "create" }: SignInFlowModalProps) {
   const { ready: privyReady, authenticated: privyAuthenticated, login, logout, getAccessToken } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
   const { createWallet } = useCreateWallet();
@@ -341,7 +342,7 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
   const privyAuthenticatedRef = useRef(privyAuthenticated);
   const privyReadyRef = useRef(privyReady);
 
-  const [journey, setJourney] = useState<Journey>("create");
+  const [journey, setJourney] = useState<Journey>(initialJourney);
   const [stepIndex, setStepIndex] = useState(0);
 
   const [selectedAccessMethod, setSelectedAccessMethod] = useState<PrivyLoginMethod>("passkey");
@@ -376,6 +377,8 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
   const [deploymentNetwork, setDeploymentNetwork] = useState("sepolia");
 
   const [sessionReady, setSessionReady] = useState(false);
+  const [activeSession, setActiveSession] = useState<AuthSessionResponse | null>(null);
+  const [checkingActiveSession, setCheckingActiveSession] = useState(false);
   const [flowError, setFlowError] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -421,8 +424,37 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
     }
   }, [stepIndex, steps.length]);
 
-  const resetFlow = () => {
-    setJourney("create");
+  useEffect(() => {
+    if (!open || journey !== "sign-in" || currentStep !== "access") {
+      return;
+    }
+
+    let active = true;
+    setCheckingActiveSession(true);
+
+    const loadActiveSession = async () => {
+      try {
+        const session = await getAuthSession();
+        if (!active) return;
+        if (session.authenticated && session.walletAddress && session.safeAddress) {
+          setActiveSession(session);
+        } else {
+          setActiveSession(null);
+        }
+      } finally {
+        if (active) setCheckingActiveSession(false);
+      }
+    };
+
+    void loadActiveSession();
+
+    return () => {
+      active = false;
+    };
+  }, [currentStep, journey, open]);
+
+  const resetFlow = useCallback((journeyOverride: Journey = initialJourney) => {
+    setJourney(journeyOverride);
     setStepIndex(0);
     setSelectedAccessMethod("passkey");
     setAccessProfileName("Main passkey");
@@ -452,16 +484,21 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
     setDeploymentMode("mock");
     setDeploymentNetwork("sepolia");
     setSessionReady(false);
+    setActiveSession(null);
+    setCheckingActiveSession(false);
     setFlowError("");
     setCopied(false);
-  };
+  }, [initialJourney]);
 
   useEffect(() => {
-    if (!open) {
-      const timer = setTimeout(resetFlow, 150);
-      return () => clearTimeout(timer);
+    if (open) {
+      resetFlow(initialJourney);
+      return;
     }
-  }, [open]);
+
+    const timer = setTimeout(() => resetFlow(initialJourney), 150);
+    return () => clearTimeout(timer);
+  }, [open, initialJourney, resetFlow]);
 
   const waitForPrivyReady = async () => {
     for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -828,6 +865,41 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
                     <p className="mt-1 text-xs text-slate-500">Find and open your existing Safe-backed account.</p>
                   </button>
                 </div>
+
+                {journey === "sign-in" ? (
+                  <Card className="bg-white/95">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Active session</CardTitle>
+                      <p className="text-sm text-slate-600">
+                        If you are already signed in on this browser, you can resume instantly.
+                      </p>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {checkingActiveSession ? (
+                        <p className="text-sm text-slate-600">Checking active session...</p>
+                      ) : activeSession?.authenticated && activeSession.safeAddress ? (
+                        <>
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                            <p className="text-sm font-semibold text-emerald-900">Session found</p>
+                            <p className="mt-1 font-mono text-xs text-emerald-800">{activeSession.safeAddress}</p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              onOpenChange(false);
+                              window.location.assign("/dashboard");
+                            }}
+                          >
+                            Open current dashboard session
+                          </Button>
+                        </>
+                      ) : (
+                        <p className="text-sm text-slate-600">No active session found. Continue below to log in.</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                ) : null}
 
                 {PRIVY_CONFIGURED ? (
                   <Card className="bg-white/95">
@@ -1391,7 +1463,7 @@ export function SignInFlowModal({ open, onOpenChange }: SignInFlowModalProps) {
                     <Button disabled>Open dashboard</Button>
                   )}
 
-                  <Button variant="outline" onClick={resetFlow}>
+                  <Button variant="outline" onClick={() => resetFlow()}>
                     Start another setup
                   </Button>
                 </div>

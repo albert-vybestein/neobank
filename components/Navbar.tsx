@@ -57,14 +57,21 @@ export function Navbar() {
           </nav>
 
           <div className="hidden items-center gap-3 lg:flex">
-            <Link
-              href="/dashboard"
-              className={`text-sm font-medium ${pathname === "/dashboard" ? "text-slate-900" : "text-slate-600 hover:text-slate-900"}`}
-              aria-current={pathname === "/dashboard" ? "page" : undefined}
+            <SignInButton
+              journey="sign-in"
+              eventLocation="navbar_login"
+              variant="outline"
+              className="h-10 rounded-xl border-slate-300 bg-white px-5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-100"
             >
               Log in
-            </Link>
-            <SignInButton>{siteConfig.primaryCta}</SignInButton>
+            </SignInButton>
+            <SignInButton
+              journey="create"
+              eventLocation="navbar_create"
+              className="h-10 rounded-xl px-5 text-sm font-semibold shadow-[0_10px_22px_-12px_rgba(37,99,235,0.75)]"
+            >
+              Create account
+            </SignInButton>
           </div>
 
           <Button
@@ -97,19 +104,24 @@ export function Navbar() {
                 {item.label}
               </Link>
             ))}
-            <Link
-              href="/dashboard"
-              className={`rounded-2xl px-4 py-3 text-sm font-medium transition hover:bg-slate-100 ${
-                pathname === "/dashboard" ? "bg-slate-100 text-slate-900" : "text-slate-700"
-              }`}
-              aria-current={pathname === "/dashboard" ? "page" : undefined}
+            <SignInButton
+              journey="sign-in"
+              eventLocation="mobile_login"
+              variant="outline"
+              className="h-11 w-full rounded-2xl border-slate-300 bg-white text-sm font-semibold text-slate-800"
+              onClick={() => setMobileOpen(false)}
             >
               Log in
-            </Link>
+            </SignInButton>
           </div>
           <div className="sticky bottom-0 border-t border-border bg-white/90 px-4 py-3 backdrop-blur">
-            <SignInButton className="w-full" onClick={() => setMobileOpen(false)}>
-              {siteConfig.primaryCta}
+            <SignInButton
+              journey="create"
+              eventLocation="mobile_create"
+              className="h-11 w-full rounded-2xl text-sm font-semibold"
+              onClick={() => setMobileOpen(false)}
+            >
+              Create account
             </SignInButton>
           </div>
         </div>

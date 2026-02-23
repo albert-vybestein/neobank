@@ -74,6 +74,11 @@ const sections: ProductSection[] = [
   }
 ];
 
+const sectionRows: ProductSection[][] = [];
+for (let index = 0; index < sections.length; index += 2) {
+  sectionRows.push(sections.slice(index, index + 2));
+}
+
 export default function ProductPage() {
   return (
     <>
@@ -93,45 +98,56 @@ export default function ProductPage() {
         </Reveal>
       </Section>
 
-      {sections.map((section, index) => (
-        <Section key={section.id} className={index === 0 ? "pt-6" : "pt-2"}>
+      {sectionRows.map((row, rowIndex) => (
+        <Section key={`product-row-${rowIndex}`} className={rowIndex === 0 ? "py-4 md:py-6" : "py-3 md:py-5"}>
           <Reveal>
-            <div className="grid items-center gap-8 lg:grid-cols-[1fr_0.9fr]">
-              <Card className="order-2 bg-white/95 lg:order-1">
-                <CardContent className="space-y-6 p-8">
-                  <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                    <section.icon className="h-5 w-5" />
-                  </div>
-                  <div className="space-y-3">
-                    <h2 className="text-4xl font-semibold text-slate-950">{section.title}</h2>
-                    <p className="text-lg text-slate-600">{section.description}</p>
-                  </div>
-                  <ul className="space-y-3">
-                    {section.bullets.map((bullet) => (
-                      <li key={bullet} className="flex items-start gap-2 text-base text-slate-700">
-                        <Check className="mt-1 h-4 w-4 text-primary" />
-                        <span>{bullet}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-              <div className="order-1 lg:order-2">
-                <PhoneMock variant={section.variant} className="max-w-[350px]" />
-              </div>
+            <div className="grid gap-5 xl:grid-cols-2">
+              {row.map((section) => (
+                <Card key={section.id} className="bg-white/95">
+                  <CardContent className="p-6">
+                    <div className="grid items-start gap-5 lg:grid-cols-[1fr_220px]">
+                      <div className="space-y-4">
+                        <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                          <section.icon className="h-5 w-5" />
+                        </div>
+                        <div className="space-y-2">
+                          <h2 className="text-3xl font-semibold text-slate-950">{section.title}</h2>
+                          <p className="text-base text-slate-600">{section.description}</p>
+                        </div>
+                        <ul className="space-y-2">
+                          {section.bullets.map((bullet) => (
+                            <li key={bullet} className="flex items-start gap-2 text-sm text-slate-700">
+                              <Check className="mt-0.5 h-4 w-4 text-primary" />
+                              <span>{bullet}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="mx-auto w-full max-w-[220px]">
+                        <PhoneMock variant={section.variant} className="max-w-[220px]" />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           </Reveal>
         </Section>
       ))}
 
-      <Section>
+      <Section className="pb-16 pt-8 md:pb-20 md:pt-10">
         <Reveal>
           <Card className="bg-slate-950 text-white">
             <CardContent className="flex flex-col items-center gap-6 p-10 text-center md:p-14">
               <h2 className="text-4xl font-semibold md:text-5xl">Ready to switch to a more controllable account?</h2>
-              <p className="max-w-2xl text-lg text-slate-300">Sign in to connect and deploy your account setup with policy modules.</p>
+              <p className="max-w-2xl text-lg text-slate-300">Create your account and deploy your setup with policy modules.</p>
               <div className="flex flex-wrap justify-center gap-3">
-                <SignInButton size="lg">Sign in</SignInButton>
+                <SignInButton size="lg" journey="create" eventLocation="product_create">
+                  Create account
+                </SignInButton>
+                <SignInButton size="lg" journey="sign-in" eventLocation="product_login" variant="outline">
+                  Log in
+                </SignInButton>
                 <Button size="lg" variant="outline" className="border-slate-700 bg-transparent text-white hover:bg-slate-800" asChild>
                   <Link href="/pricing">See pricing</Link>
                 </Button>

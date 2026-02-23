@@ -77,7 +77,9 @@ export function PricingCards({ plans = defaultPlans, compact = false }: PricingC
                 <Link href="mailto:sales@neobank.example">Contact sales</Link>
               </Button>
             ) : (
-              <SignInButton variant={plan.highlight ? "default" : "outline"}>Sign in</SignInButton>
+              <SignInButton journey="create" variant={plan.highlight ? "default" : "outline"}>
+                Create account
+              </SignInButton>
             )}
           </CardContent>
         </Card>

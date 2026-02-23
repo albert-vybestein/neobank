@@ -98,7 +98,6 @@ If you see `Login with <method> not allowed`, enable that method in your Privy a
 - `/how-it-works`
 - `/pricing`
 - `/company`
-- `/developers`
 - `/legal/terms`
 - `/legal/privacy`
 - `/legal/disclosures`

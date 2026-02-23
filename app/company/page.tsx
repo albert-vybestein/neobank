@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Briefcase, Compass, Eye, Shield, UserCircle2 } from "lucide-react";
+import { Briefcase } from "lucide-react";
 
 import { CompanyContactForm } from "@/components/CompanyContactForm";
 import { Reveal } from "@/components/Reveal";
@@ -8,29 +8,6 @@ import { Section } from "@/components/Section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-const principles = [
-  {
-    title: "Ownership",
-    body: "Users should keep direct control of their account and permissions.",
-    icon: UserCircle2
-  },
-  {
-    title: "Usability",
-    body: "Powerful infrastructure should feel simple in everyday money moments.",
-    icon: Compass
-  },
-  {
-    title: "Safety",
-    body: "Policy enforcement and recovery must be clear, auditable, and practical.",
-    icon: Shield
-  },
-  {
-    title: "Transparency",
-    body: "Fees, limits, and account actions should always be visible before confirmation.",
-    icon: Eye
-  }
-];
 
 const roles = [
   {
@@ -97,30 +74,7 @@ export default function CompanyPage() {
         </Reveal>
       </Section>
 
-      <Section className="pt-8">
-        <Reveal>
-          <div className="space-y-6">
-            <h2 className="text-4xl font-semibold text-slate-950 md:text-5xl">About</h2>
-            <div className="grid gap-4 md:grid-cols-2">
-              {principles.map((principle) => (
-                <Card key={principle.title} className="card-lift bg-white/95">
-                  <CardHeader>
-                    <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                      <principle.icon className="h-5 w-5" />
-                    </div>
-                    <CardTitle className="text-2xl">{principle.title}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-base text-slate-600">{principle.body}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </Reveal>
-      </Section>
-
-      <Section>
+      <Section className="pt-4 md:pt-6">
         <Reveal>
           <div className="space-y-6">
             <div className="space-y-3">

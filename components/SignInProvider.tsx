@@ -7,13 +7,15 @@ import { sepolia } from "viem/chains";
 
 import { getPrivyLoginMethodConfig } from "@/lib/privy";
 
+type SignInJourney = "create" | "sign-in";
+
 const SignInFlowModal = dynamic(
   () => import("@/components/SignInFlowModal").then((module) => module.SignInFlowModal),
   { ssr: false }
 );
 
 type SignInContextValue = {
-  openSignIn: () => void;
+  openSignIn: (options?: { journey?: SignInJourney }) => void;
 };
 
 const SignInContext = createContext<SignInContextValue | null>(null);
@@ -47,10 +49,12 @@ const privyConfig: PrivyProviderProps["config"] = {
 function SignInShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [modalMounted, setModalMounted] = useState(false);
+  const [initialJourney, setInitialJourney] = useState<SignInJourney>("create");
 
   const value = useMemo(
     () => ({
-      openSignIn: () => {
+      openSignIn: (options?: { journey?: SignInJourney }) => {
+        setInitialJourney(options?.journey ?? "create");
         setModalMounted(true);
         setOpen(true);
       }
@@ -61,7 +65,7 @@ function SignInShell({ children }: { children: ReactNode }) {
   return (
     <SignInContext.Provider value={value}>
       {children}
-      {modalMounted ? <SignInFlowModal open={open} onOpenChange={setOpen} /> : null}
+      {modalMounted ? <SignInFlowModal open={open} onOpenChange={setOpen} initialJourney={initialJourney} /> : null}
     </SignInContext.Provider>
   );
 }

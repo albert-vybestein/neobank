@@ -15,7 +15,9 @@ export default function NotFound() {
           <Button asChild>
             <Link href="/">Go home</Link>
           </Button>
-          <SignInButton variant="outline">Sign in</SignInButton>
+          <SignInButton journey="sign-in" variant="outline">
+            Log in
+          </SignInButton>
         </div>
       </div>
     </Section>

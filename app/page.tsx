@@ -70,7 +70,7 @@ export default function HomePage() {
 
   return (
     <>
-      <section className="hero-gradient relative overflow-hidden pt-28 pb-14 md:pt-36 md:pb-20">
+      <section className="hero-gradient relative overflow-hidden pb-14 pt-2 md:pb-20 md:pt-4">
         <div className="hero-light hero-light-a" aria-hidden />
         <div className="hero-light hero-light-b" aria-hidden />
         <div className="hero-light hero-light-c" aria-hidden />
@@ -100,7 +100,12 @@ export default function HomePage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <SignInButton size="lg">Sign in</SignInButton>
+              <SignInButton size="lg" journey="create" eventLocation="home_hero_create">
+                Create account
+              </SignInButton>
+              <SignInButton size="lg" journey="sign-in" eventLocation="home_hero_login" variant="outline">
+                Log in
+              </SignInButton>
               <Button size="lg" variant="outline" asChild>
                 <Link href="/how-it-works">See how it works</Link>
               </Button>
@@ -294,7 +299,12 @@ export default function HomePage() {
                   Global cards and local rails with ownership, clarity, and policy controls built into every action.
                 </p>
                 <div className="flex flex-wrap items-center gap-3">
-                  <SignInButton size="lg">Sign in</SignInButton>
+                  <SignInButton size="lg" journey="create" eventLocation="home_final_create">
+                    Create account
+                  </SignInButton>
+                  <SignInButton size="lg" journey="sign-in" eventLocation="home_final_login" variant="outline">
+                    Log in
+                  </SignInButton>
                   <Button
                     size="lg"
                     variant="outline"

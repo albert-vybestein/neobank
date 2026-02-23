@@ -1,16 +1,14 @@
 export const siteConfig = {
   brandName: "NEOBANK",
   tagline: "Your bank account, rebuilt for the internet.",
-  primaryCta: "Sign in",
+  primaryCta: "Create account",
   secondaryCta: "See how it works",
   navItems: [
-    { label: "Dashboard", href: "/dashboard" },
     { label: "Product", href: "/product" },
     { label: "Security", href: "/security" },
     { label: "How it works", href: "/how-it-works" },
     { label: "Pricing", href: "/pricing" },
-    { label: "Company", href: "/company" },
-    { label: "Developers", href: "/developers" }
+    { label: "Company", href: "/company" }
   ],
   socialLinks: [
     { label: "X", href: "https://x.com/safe" },

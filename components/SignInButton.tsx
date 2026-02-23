@@ -5,7 +5,18 @@ import { useSignIn } from "@/components/SignInProvider";
 import { trackEvent } from "@/lib/analytics";
 import { siteConfig } from "@/lib/site";
 
-export function SignInButton({ children, onClick, ...props }: ButtonProps) {
+type SignInButtonProps = ButtonProps & {
+  journey?: "create" | "sign-in";
+  eventLocation?: string;
+};
+
+export function SignInButton({
+  children,
+  onClick,
+  journey = "create",
+  eventLocation = "cta",
+  ...props
+}: SignInButtonProps) {
   const { openSignIn } = useSignIn();
 
   return (
@@ -14,8 +25,8 @@ export function SignInButton({ children, onClick, ...props }: ButtonProps) {
       onClick={(event) => {
         onClick?.(event);
         if (!event.defaultPrevented) {
-          void trackEvent("sign_in_opened", { location: "cta" });
-          openSignIn();
+          void trackEvent("sign_in_opened", { location: eventLocation, journey });
+          openSignIn({ journey });
         }
       }}
     >

@@ -1,0 +1,99 @@
+{
+  "portfolioCurve": [118, 122, 121, 127, 132, 136, 134, 139, 147, 152, 149, 156, 168, 173, 182],
+  "spendByCategory": [
+    { "label": "Housing", "spent": 2100, "budget": 2200 },
+    { "label": "Food", "spent": 690, "budget": 600 },
+    { "label": "Transport", "spent": 420, "budget": 450 },
+    { "label": "Subscriptions", "spent": 190, "budget": 150 },
+    { "label": "Lifestyle", "spent": 980, "budget": 900 }
+  ],
+  "protocolCatalog": [
+    {
+      "name": "Aave Prime Pool",
+      "strategy": "Lend stable assets with dynamic rates",
+      "riskScore": 3,
+      "rewardScore": 6,
+      "apy": "4.8%",
+      "liquidity": "$2.1B",
+      "profiles": ["conservative", "balanced"],
+      "moduleMapping": "Allowance + Smart spending rules",
+      "summary": "Steady yield and deep liquidity for capital you may need quickly."
+    },
+    {
+      "name": "Morpho Curated Vaults",
+      "strategy": "Auto-optimized lending vaults",
+      "riskScore": 4,
+      "rewardScore": 7,
+      "apy": "6.2%",
+      "liquidity": "$980M",
+      "profiles": ["balanced", "aggressive"],
+      "moduleMapping": "Scheduled money automations + Team approvals",
+      "summary": "Higher expected return while keeping transparent vault parameters."
+    },
+    {
+      "name": "Pendle Yield Routing",
+      "strategy": "Lock yield exposure by maturity",
+      "riskScore": 6,
+      "rewardScore": 9,
+      "apy": "11.4%",
+      "liquidity": "$610M",
+      "profiles": ["aggressive"],
+      "moduleMapping": "Approval delay + Transfer hold window",
+      "summary": "For users willing to trade flexibility for stronger forward yield."
+    },
+    {
+      "name": "Ethena Delta Sleeve",
+      "strategy": "Basis and hedge carry strategy",
+      "riskScore": 7,
+      "rewardScore": 9,
+      "apy": "13.1%",
+      "liquidity": "$1.3B",
+      "profiles": ["aggressive"],
+      "moduleMapping": "Fast trusted sessions + Recovery contacts",
+      "summary": "Higher carry profile with active risk controls and caps."
+    },
+    {
+      "name": "Lido Core Staking",
+      "strategy": "Liquid staking for long-term holding",
+      "riskScore": 5,
+      "rewardScore": 7,
+      "apy": "5.9%",
+      "liquidity": "$8.5B",
+      "profiles": ["conservative", "balanced"],
+      "moduleMapping": "Team roles + Spending caps",
+      "summary": "Suitable for base exposure with moderate growth expectations."
+    }
+  ],
+  "perpsMarkets": [
+    { "symbol": "BTC-PERP", "price": 68420, "change24h": 2.3, "funding": 0.008, "openInterest": "$1.9B" },
+    { "symbol": "ETH-PERP", "price": 3520, "change24h": 1.1, "funding": 0.005, "openInterest": "$980M" },
+    { "symbol": "SOL-PERP", "price": 159, "change24h": -0.7, "funding": -0.003, "openInterest": "$420M" },
+    { "symbol": "NVDA-SYN", "price": 1134, "change24h": 0.6, "funding": 0.001, "openInterest": "$210M" }
+  ],
+  "predictionEvents": [
+    {
+      "title": "Fed cuts rates before Q4",
+      "category": "Macro",
+      "closeDate": "Sep 30",
+      "yes": 62,
+      "no": 38,
+      "volume": "$3.4M"
+    },
+    {
+      "title": "ETH ETF net inflows positive this month",
+      "category": "Crypto",
+      "closeDate": "Jul 31",
+      "yes": 71,
+      "no": 29,
+      "volume": "$2.1M"
+    },
+    {
+      "title": "S&P 500 above 6000 by year end",
+      "category": "Equities",
+      "closeDate": "Dec 31",
+      "yes": 45,
+      "no": 55,
+      "volume": "$4.8M"
+    }
+  ]
+}

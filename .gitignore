@@ -31,3 +31,6 @@ playwright-report/
 
 # local runtime data
 .data/
+
+# local runtime data
+.data/
